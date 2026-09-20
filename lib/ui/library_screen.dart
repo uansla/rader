@@ -130,7 +130,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '支持：TXT / EPUB / MOBI / HTML / MD 及 MP3 / M4A / FLAC 等\nWindows 也可直接把文件拖进本窗口',
+                          '支持：TXT / EPUB / MOBI / HTML / MD / ODT / DOCX 及 MP3 / M4A / FLAC 等\nWindows 也可直接把文件拖进本窗口',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
@@ -251,7 +251,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       allowMultiple: true,
       type: FileType.custom,
       allowedExtensions: const [
-        'txt', 'epub', 'mobi', 'azw3', 'html', 'htm', 'md', 'markdown', 'fb2',
+        'txt', 'epub', 'mobi', 'azw3', 'html', 'htm', 'md', 'markdown', 'fb2', 'odt', 'docx',
         'mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', 'm4b', 'amr',
       ],
     );
