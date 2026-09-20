@@ -37,6 +37,8 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.6
   epubx: ^4.0.0
+  archive: ^4.0.7
+  xml: ^6.5.0
   charset_converter: ^2.5.1
   just_audio: ^0.10.6
   flutter_tts: ^4.2.5
