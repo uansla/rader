@@ -393,6 +393,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
               _scheduleSave();
             },
             onScrolled: () {},
+            onReadFromPosition: (chapter, position) {
+              _speakFromChapterPosition(chapter, position);
+            },
           )
         : PageView.builder(
             controller: _pageController,
@@ -574,6 +577,40 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (!mounted) return;
     setState(() => _ttsPlaying = ok);
     if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未检测到可用的离线语音引擎')),
+      );
+    }
+  }
+
+  Future<void> _speakFromChapterPosition(int chapter, int start) async {
+    final session = _session;
+    final tts = _tts;
+    if (session == null || tts == null) return;
+    if (chapter < 0 || chapter >= session.texts.length) return;
+
+    final text = session.texts[chapter];
+    final safeStart = start.clamp(0, text.length);
+    if (safeStart >= text.length) return;
+
+    _chapter = chapter;
+    if (_scrollMode) {
+      _scrollKey.currentState?.jumpToChapter(chapter, charPos: safeStart);
+    } else {
+      _pageController.jumpToPage(chapter);
+    }
+    await tts.stop();
+    _ttsBaseOffset = safeStart;
+    tts.onFinished = _autoAdvanceTts;
+    tts.onProgress = _onTtsProgress;
+    final ok = await tts.speak(text.substring(safeStart));
+    if (!mounted) return;
+    if (ok) {
+      _scrollToReading(safeStart);
+      setState(() => _ttsPlaying = true);
+    } else {
+      tts.onFinished = null;
+      tts.onProgress = null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('未检测到可用的离线语音引擎')),
       );
