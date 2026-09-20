@@ -524,6 +524,28 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _buildTextMenu(
       BuildContext context, EditableTextState editableTextState) {
     final buttons = <ContextMenuButtonItem>[
+      ContextMenuButtonItem(
+        label: '朗读所选文字',
+        onPressed: () {
+          final val = editableTextState.textEditingValue;
+          final selected = val.selection.textInside(val.text);
+          editableTextState.hideToolbar();
+          if (selected.trim().isNotEmpty) {
+            _speakSelectedText(selected);
+          }
+        },
+      ),
+      ContextMenuButtonItem(
+        label: '从这里开始朗读',
+        onPressed: () {
+          final val = editableTextState.textEditingValue;
+          final start = val.selection.isValid ? val.selection.start : -1;
+          editableTextState.hideToolbar();
+          if (start >= 0) {
+            _speakFromPosition(start);
+          }
+        },
+      ),
       ...editableTextState.contextMenuButtonItems,
       ContextMenuButtonItem(
         label: '全书搜索',
@@ -539,6 +561,49 @@ class _ReaderScreenState extends State<ReaderScreen> {
       anchors: editableTextState.contextMenuAnchors,
       buttonItems: buttons,
     );
+  }
+
+  Future<void> _speakSelectedText(String selected) async {
+    final tts = _tts;
+    if (tts == null) return;
+    await tts.stop();
+    _ttsBaseOffset = 0;
+    tts.onFinished = null;
+    tts.onProgress = _onTtsProgress;
+    final ok = await tts.speak(selected);
+    if (!mounted) return;
+    setState(() => _ttsPlaying = ok);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未检测到可用的离线语音引擎')),
+      );
+    }
+  }
+
+  Future<void> _speakFromPosition(int start) async {
+    final session = _session;
+    final tts = _tts;
+    if (session == null || tts == null) return;
+    final text = session.texts[_chapter];
+    final safeStart = start.clamp(0, text.length);
+    if (safeStart >= text.length) return;
+
+    await tts.stop();
+    _ttsBaseOffset = safeStart;
+    tts.onFinished = _autoAdvanceTts;
+    tts.onProgress = _onTtsProgress;
+    final ok = await tts.speak(text.substring(safeStart));
+    if (!mounted) return;
+    if (ok) {
+      _scrollToReading(safeStart);
+      setState(() => _ttsPlaying = true);
+    } else {
+      tts.onFinished = null;
+      tts.onProgress = null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未检测到可用的离线语音引擎')),
+      );
+    }
   }
 
   void _openSettings() {
@@ -984,6 +1049,19 @@ class _ChapterBodyState extends State<_ChapterBody> {
   final ScrollController _controller = ScrollController();
   TextPainter? _painter;
   double _width = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(widget.onScroll);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(widget.onScroll);
+    _controller.dispose();
+    super.dispose();
+  }
 
   /// 文本实际排版宽度 = 可用宽度 - 左右 padding。
   double get _textWidth =>
