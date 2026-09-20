@@ -95,7 +95,7 @@ class ScannerService {
 
   bool _isTextFormat(String fmt) {
     return const {
-      'txt', 'epub', 'mobi', 'azw3', 'html', 'md', 'fb2'
+      'txt', 'epub', 'mobi', 'azw3', 'html', 'md', 'fb2', 'odt', 'docx'
     }.contains(fmt);
   }
 
