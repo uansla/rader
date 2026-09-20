@@ -1,0 +1,67 @@
+name: build-test-package
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate valid DOCX and ODT fixtures
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python3 -m pip install --disable-pip-version-check python-docx odfpy
+          python3 - <<'PY'
+          from pathlib import Path
+          from docx import Document
+          from odf.opendocument import OpenDocumentText
+          from odf.text import P
+          
+          base = Path("test/fixtures/documents")
+          text_docx = (base / "ceshi.docx.txt").read_text(encoding="utf-8")
+          text_odt = (base / "ceshi.odt.txt").read_text(encoding="utf-8")
+          
+          doc = Document()
+          for paragraph in text_docx.split("\n"):
+              doc.add_paragraph(paragraph)
+          doc.save(base / "ceshi.docx")
+          
+          odt = OpenDocumentText()
+          for paragraph in text_odt.split("\n"):
+              odt.text.addElement(P(text=paragraph))
+          odt.save(str(base / "ceshi.odt"))
+          PY
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.0"
+          channel: stable
+          cache: true
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Package source and test documents
+        run: |
+          mkdir -p release
+          zip -r "release/Reader_v1.3.0_test.zip" .             -x ".git/*"             -x "build/*"             -x ".dart_tool/*"             -x "release/*"
+      
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reader_v1.3.0_test
+          path: release/Reader_v1.3.0_test.zip
+          retention-days: 30
