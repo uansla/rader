@@ -44,6 +44,13 @@ class TtsService {
     if (_useSystem) {
       // 系统引擎读完一段文本后触发，用于自动翻页
       _tts.setCompletionHandler(() => onFinished?.call());
+      // flutter_tts reports native word/range offsets. Forward them to the
+      // reader so scrolling and the persistent reading position follow the
+      // actual spoken location instead of only the manually scrolled location.
+      _tts.setProgressHandler(
+          (String text, int start, int end, String word) {
+        onProgress?.call(start, end, 0);
+      });
     }
     if (!_useSystem) {
       _neural = NeuralTts();
