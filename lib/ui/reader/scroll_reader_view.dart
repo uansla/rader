@@ -14,6 +14,7 @@ class ScrollReaderView extends StatefulWidget {
   final double initialProgress;
   final ValueChanged<(int chapter, int charPos, double progress)> onProgress;
   final void Function() onScrolled;
+  final void Function(int chapter, int position)? onReadFromPosition;
 
   const ScrollReaderView({
     super.key,
@@ -24,6 +25,7 @@ class ScrollReaderView extends StatefulWidget {
     required this.initialProgress,
     required this.onProgress,
     required this.onScrolled,
+    this.onReadFromPosition,
   });
 
   @override
@@ -237,7 +239,42 @@ class ScrollReaderViewState extends State<ScrollReaderView> {
             SelectableText(
               _texts[i],
               style: widget.style,
-              contextMenuBuilder: widget.contextMenuBuilder,
+              contextMenuBuilder: widget.onReadFromPosition == null
+                  ? widget.contextMenuBuilder
+                  : (context, editableTextState) {
+                      final val = editableTextState.textEditingValue;
+                      final selected = val.selection.textInside(val.text);
+                      final start = val.selection.isValid ? val.selection.start : -1;
+                      final buttons = <ContextMenuButtonItem>[
+                        if (selected.trim().isNotEmpty)
+                          ContextMenuButtonItem(
+                            label: '朗读所选文字',
+                            onPressed: () {
+                              editableTextState.hideToolbar();
+                              // -1 means "read selected text"; the reader can
+                              // use the selection string from its own callback
+                              // only when needed. For now, starting at the
+                              // selected paragraph is the primary action.
+                              if (start >= 0) {
+                                widget.onReadFromPosition!(i, start);
+                              }
+                            },
+                          ),
+                        if (start >= 0)
+                          ContextMenuButtonItem(
+                            label: '从这里开始朗读',
+                            onPressed: () {
+                              editableTextState.hideToolbar();
+                              widget.onReadFromPosition!(i, start);
+                            },
+                          ),
+                        ...editableTextState.contextMenuButtonItems,
+                      ];
+                      return AdaptiveTextSelectionToolbar.buttonItems(
+                        anchors: editableTextState.contextMenuAnchors,
+                        buttonItems: buttons,
+                      );
+                    },
               textScaler: TextScaler.linear(1),
             ),
           ],
