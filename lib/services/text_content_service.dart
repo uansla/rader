@@ -7,6 +7,8 @@ import '../data/repositories.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import 'text_parser.dart';
+import 'docx_parser.dart';
+import 'odt_parser.dart';
 
 class BookSession {
   final int bookId;
@@ -24,7 +26,27 @@ class TextContentService {
     if (book.format == 'epub') {
       return _openEpub(book);
     }
+
     final bytes = await File(book.path).readAsBytes();
+
+    // ODT/DOCX are ZIP-based XML office documents. Convert them to plain text
+    // first, then feed the result through the existing chapter splitter.
+    if (book.format == 'odt' || book.format == 'docx') {
+      final content = book.format == 'odt'
+          ? await OdtParser.parse(bytes)
+          : await DocxParser.parse(bytes);
+      final chapters = TextParser.splitChapters(content);
+      final texts = [
+        for (final c in chapters) content.substring(c.start, c.end),
+      ];
+      await _persist(book.id!, chapters, book.format);
+      return BookSession(
+        book.id!,
+        chapters.map((c) => c.title).toList(),
+        texts,
+      );
+    }
+
     final parsed = await TextParser.parseBytes(bytes);
     final texts = <String>[];
     for (final c in parsed.chapters) {
