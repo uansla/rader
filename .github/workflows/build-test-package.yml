@@ -1,4 +1,4 @@
-name: build-test-package
+name: build-windows
 
 on:
   push:
@@ -6,37 +6,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-and-package:
-    runs-on: ubuntu-latest
+  build-windows:
+    runs-on: windows-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Generate valid DOCX and ODT fixtures
-        env:
-          PYTHONUNBUFFERED: "1"
-        run: |
-          python3 -m pip install --disable-pip-version-check python-docx odfpy
-          python3 - <<'PY'
-          from pathlib import Path
-          from docx import Document
-          from odf.opendocument import OpenDocumentText
-          from odf.text import P
-          
-          base = Path("test/fixtures/documents")
-          text_docx = (base / "ceshi.docx.txt").read_text(encoding="utf-8")
-          text_odt = (base / "ceshi.odt.txt").read_text(encoding="utf-8")
-          
-          doc = Document()
-          for paragraph in text_docx.split("\n"):
-              doc.add_paragraph(paragraph)
-          doc.save(base / "ceshi.docx")
-          
-          odt = OpenDocumentText()
-          for paragraph in text_odt.split("\n"):
-              odt.text.addElement(P(text=paragraph))
-          odt.save(str(base / "ceshi.odt"))
-          PY
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -54,14 +29,50 @@ jobs:
       - name: Test
         run: flutter test
 
-      - name: Package source and test documents
+      - name: Build Windows x64
+        run: flutter build windows --release
+
+      - name: Verify Windows build
+        shell: pwsh
         run: |
-          mkdir -p release
-          zip -r "release/Reader_v1.3.0_test.zip" .             -x ".git/*"             -x "build/*"             -x ".dart_tool/*"             -x "release/*"
-      
-      - name: Upload ZIP
+          $releaseDir = "build/windows/x64/runner/Release"
+          if (-not (Test-Path $releaseDir)) {
+            throw "Windows release directory was not generated: $releaseDir"
+          }
+
+          $exe = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File | Select-Object -First 1
+          if ($null -eq $exe) {
+            throw "No Windows executable was found in $releaseDir"
+          }
+
+          Write-Host "Windows executable: $($exe.FullName)"
+          Write-Host "Build directory size:"
+          (Get-ChildItem -Path $releaseDir -Recurse -File |
+            Measure-Object -Property Length -Sum).Sum
+
+      - name: Package Windows x64
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $zip = "Reader_v1.3.0_Windows_x64.zip"
+
+          if (Test-Path $zip) {
+            Remove-Item $zip -Force
+          }
+
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zip -CompressionLevel Optimal
+
+          if (-not (Test-Path $zip)) {
+            throw "Windows package was not created: $zip"
+          }
+
+          Write-Host "Package created: $zip"
+          Get-Item $zip | Format-List FullName, Length
+
+      - name: Upload Windows x64 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Reader_v1.3.0_test
-          path: release/Reader_v1.3.0_test.zip
+          name: Reader_v1.3.0_Windows_x64
+          path: Reader_v1.3.0_Windows_x64.zip
+          if-no-files-found: error
           retention-days: 30
