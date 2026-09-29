@@ -145,6 +145,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $zip = "Reader_v1.3.0_Windows_x64.zip"
           $tag = "v1.3.0-windows-test-${{ github.run_number }}"
           $title = "Reader v1.3.0 Windows x64 测试版 #${{ github.run_number }}"
           gh release create $tag $zip --title $title --notes "Windows x64 测试版。ZIP 内包含完整 Release 程序及离线中文 TTS 运行文件。" --target $env:GITHUB_SHA
