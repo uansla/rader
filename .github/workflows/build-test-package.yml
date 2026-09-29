@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -32,6 +35,59 @@ jobs:
       - name: Build Windows x64
         run: flutter build windows --release
 
+      - name: Add offline TTS runtime files
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $nativeDir = "native/espeak-ng"
+
+          if (-not (Test-Path $nativeDir)) {
+            throw "Native TTS directory was not found: $nativeDir"
+          }
+
+          foreach ($file in @("espeak-ng.dll", "onnxruntime.dll", "reader_tts.dll", "zh_CN-huayan-medium.onnx.json")) {
+            $src = Join-Path $nativeDir $file
+            if (-not (Test-Path $src)) {
+              throw "Required TTS file is missing: $src"
+            }
+            Copy-Item $src $releaseDir -Force
+          }
+
+          $dataSrc = Join-Path $nativeDir "espeak-ng-data"
+          $dataDst = Join-Path $releaseDir "espeak-ng-data"
+          if (-not (Test-Path $dataSrc)) {
+            throw "Required espeak-ng-data directory is missing: $dataSrc"
+          }
+          if (Test-Path $dataDst) {
+            Remove-Item $dataDst -Recurse -Force
+          }
+          Copy-Item $dataSrc $dataDst -Recurse -Force
+
+          $modelUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx?download=true"
+          $modelPath = Join-Path $releaseDir "zh_CN-huayan-medium.onnx"
+          Invoke-WebRequest -Uri $modelUrl -OutFile $modelPath -UseBasicParsing
+
+          $modelSize = (Get-Item $modelPath).Length
+          if ($modelSize -lt 50000000) {
+            throw "Piper ONNX model is incomplete: $modelSize bytes"
+          }
+
+          $testNote = @(
+            "Reader Windows x64 测试版",
+            "",
+            "运行：双击 reader.exe",
+            "",
+            "本版本包含：",
+            "- Windows x64 Flutter Release 程序",
+            "- 离线中文 Piper Huayan Medium TTS 模型",
+            "- reader_tts.dll / onnxruntime.dll / espeak-ng.dll",
+            "- espeak-ng-data",
+            "- ODT / DOCX 阅读支持（以程序实际功能为准）",
+            "",
+            "如果 Windows SmartScreen 提示，请选择“更多信息”后运行；这是未签名的测试构建。"
+          ) -join [Environment]::NewLine
+          Set-Content -Path (Join-Path $releaseDir "README-Windows-Test.txt") -Value $testNote -Encoding UTF8
+
       - name: Verify Windows build
         shell: pwsh
         run: |
@@ -46,6 +102,21 @@ jobs:
           }
 
           Write-Host "Windows executable: $($exe.FullName)"
+          $required = @(
+            "reader.exe",
+            "reader_tts.dll",
+            "onnxruntime.dll",
+            "espeak-ng.dll",
+            "zh_CN-huayan-medium.onnx",
+            "zh_CN-huayan-medium.onnx.json",
+            "espeak-ng-data"
+          )
+          foreach ($item in $required) {
+            if (-not (Test-Path (Join-Path $releaseDir $item))) {
+              throw "Required release item is missing: $item"
+            }
+          }
+
           Write-Host "Build directory size:"
           (Get-ChildItem -Path $releaseDir -Recurse -File |
             Measure-Object -Property Length -Sum).Sum
@@ -68,6 +139,15 @@ jobs:
 
           Write-Host "Package created: $zip"
           Get-Item $zip | Format-List FullName, Length
+
+      - name: Publish Windows test ZIP release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v1.3.0-windows-test-${{ github.run_number }}"
+          $title = "Reader v1.3.0 Windows x64 测试版 #${{ github.run_number }}"
+          gh release create $tag $zip --title $title --notes "Windows x64 测试版。ZIP 内包含完整 Release 程序及离线中文 TTS 运行文件。" --target $env:GITHUB_SHA
 
       - name: Upload Windows x64 Artifact
         uses: actions/upload-artifact@v4
