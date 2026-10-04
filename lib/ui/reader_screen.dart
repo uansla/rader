@@ -382,9 +382,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         spans.add(TextSpan(text: widget.text.substring(cursor, r.start)));
       }
       final s = r.end.clamp(r.start, widget.text.length);
-      if (s > r.start) {
+      final highlightStart = r.start < cursor ? cursor : r.start;
+      if (s > highlightStart) {
         spans.add(TextSpan(
-          text: widget.text.substring(r.start, s),
+          text: widget.text.substring(highlightStart, s),
           style: widget.style.copyWith(
             backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
           ),
