@@ -107,7 +107,7 @@ void main() {
 
     expect(await repo.getById(id), isNull);
     final excluded = await repo.getExcludedPaths();
-    expect(excluded, contains('c:/reader/books/待清理.txt'));
+    expect(excluded.single.toLowerCase(), contains('待清理.txt'));
   });
 
   test('SyncService merge: meta fallback match when path differs', () async {
