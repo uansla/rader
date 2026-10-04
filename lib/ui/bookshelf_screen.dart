@@ -10,6 +10,7 @@ import 'history_screen.dart';
 import 'player_screen.dart';
 import 'reader_screen.dart';
 import 'stats_screen.dart';
+import 'widgets/book_cleanup_dialog.dart';
 import 'widgets/book_cover.dart';
 
 class BookshelfScreen extends StatefulWidget {
@@ -139,6 +140,11 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
             tooltip: '阅读历史',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const HistoryScreen())),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: '清理书籍/文档记录',
+            onPressed: () => showBookCleanupDialog(context, state),
           ),
           IconButton(
             icon: state.scanning
