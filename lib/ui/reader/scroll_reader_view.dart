@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
 import '../../services/text_content_service.dart';
+import '../../models/note.dart';
 
 /// 整本连续滚动阅读视图。
 /// 章节懒加载构建，通过逐章测量高度把滚动位置换算成 全局字符偏移 / 进度，
@@ -11,6 +12,9 @@ class ScrollReaderView extends StatefulWidget {
   final TextStyle style;
   final ReaderPalette palette;
   final EditableTextContextMenuBuilder? contextMenuBuilder;
+  final Widget Function(int chapter, BuildContext context, EditableTextState editableTextState)?
+      contextMenuBuilderForChapter;
+  final List<Note> notes;
   final double initialProgress;
   final ValueChanged<(int chapter, int charPos, double progress)> onProgress;
   final void Function() onScrolled;
@@ -22,6 +26,8 @@ class ScrollReaderView extends StatefulWidget {
     required this.style,
     required this.palette,
     this.contextMenuBuilder,
+    this.contextMenuBuilderForChapter,
+    this.notes = const [],
     required this.initialProgress,
     required this.onProgress,
     required this.onScrolled,
@@ -198,6 +204,45 @@ class ScrollReaderViewState extends State<ScrollReaderView> {
     }
   }
 
+  List<TextSpan> _buildTextSpans(int chapter) {
+    final text = _texts[chapter];
+    final chapterNotes =
+        widget.notes.where((n) => n.chapterIdx == chapter && n.quote.trim().isNotEmpty).toList();
+    final ranges = <({int start, int end})>[];
+    for (final note in chapterNotes) {
+      final start = note.position.clamp(0, text.length);
+      final end = (note.endPosition > start
+              ? note.endPosition
+              : start + note.quote.length)
+          .clamp(start, text.length);
+      if (end > start) ranges.add((start: start, end: end));
+    }
+    ranges.sort((a, b) => a.start.compareTo(b.start));
+
+    final spans = <TextSpan>[];
+    var cursor = 0;
+    for (final r in ranges) {
+      if (r.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, r.start)));
+      }
+      final end = r.end.clamp(r.start, text.length);
+      if (end > r.start) {
+        spans.add(TextSpan(
+          text: text.substring(r.start, end),
+          style: widget.style.copyWith(
+            backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
+          ),
+        ));
+      }
+      if (end > cursor) cursor = end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+    if (spans.isEmpty) spans.add(TextSpan(text: text));
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -236,30 +281,19 @@ class ScrollReaderViewState extends State<ScrollReaderView> {
               ),
             ),
             const SizedBox(height: 10),
-            SelectableText(
-              _texts[i],
-              style: widget.style,
-              contextMenuBuilder: widget.onReadFromPosition == null
+            SelectableText.rich(
+              TextSpan(
+                style: widget.style,
+                children: _buildTextSpans(i),
+              ),
+              contextMenuBuilder: widget.contextMenuBuilderForChapter == null
                   ? widget.contextMenuBuilder
-                  : (context, editableTextState) {
-                      final val = editableTextState.textEditingValue;
-                      final start = val.selection.isValid ? val.selection.start : -1;
-                      final buttons = <ContextMenuButtonItem>[
-                        if (start >= 0)
-                          ContextMenuButtonItem(
-                            label: '从这里开始朗读',
-                            onPressed: () {
-                              editableTextState.hideToolbar();
-                              widget.onReadFromPosition!(i, start);
-                            },
-                          ),
-                        ...editableTextState.contextMenuButtonItems,
-                      ];
-                      return AdaptiveTextSelectionToolbar.buttonItems(
-                        anchors: editableTextState.contextMenuAnchors,
-                        buttonItems: buttons,
-                      );
-                    },
+                  : (context, editableTextState) =>
+                      widget.contextMenuBuilderForChapter!(
+                        i,
+                        context,
+                        editableTextState,
+                      ),
               textScaler: TextScaler.linear(1),
             ),
           ],
