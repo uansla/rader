@@ -53,6 +53,7 @@ class ScannerService {
 
   Future<ScanSummary> scanDirectories(List<String> dirs) async {
     final summary = ScanSummary();
+    final excludedPaths = await _books.getExcludedPaths();
     final audioByDir = <String, List<File>>{};
 
     await _cleanupMissing();
@@ -64,6 +65,7 @@ class ScannerService {
             in Directory(dir).list(recursive: true, followLinks: false)) {
           if (entity is! File) continue;
           if (_isJunkPath(entity.path)) continue;
+          if (excludedPaths.contains(_pathKey(entity.path))) continue;
           final fmt = FormatDetector.detectFormat(entity.path);
           if (fmt == null) continue;
           if (_isTextFormat(fmt)) {
@@ -165,6 +167,10 @@ class ScannerService {
     s.added++;
     s.audioBooks++;
   }
+}
+
+String _pathKey(String value) {
+  return p.normalize(value).replaceAll('\\\\', '/').toLowerCase();
 }
 
 // Avoid circular import; inline helper.
