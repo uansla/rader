@@ -52,6 +52,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   TtsService? _tts;
   // 朗读高亮跟随
   int _ttsBaseOffset = 0;
+  List<Note> _notes = [];
 
   @override
   void didChangeDependencies() {
@@ -92,9 +93,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Future<void> _load() async {
     final state = context.read<AppState>();
     final session = await state.openBook(widget.book);
+    final notes = await state.noteRepo.getForBook(widget.book.id!);
     if (!mounted) return;
     setState(() {
       _session = session;
+      _notes = notes;
       _chapter = widget.book.chapterIndex.clamp(0, session.titles.length - 1);
       _scrollOverall = widget.book.progress;
       _scrollCharPos = widget.book.position;
@@ -359,6 +362,45 @@ class _ReaderScreenState extends State<ReaderScreen> {
     });
   }
 
+  List<TextSpan> _buildTextSpans() {
+    final ranges = <({int start, int end})>[];
+    for (final note in widget.notes) {
+      if (note.quote.trim().isEmpty) continue;
+      final start = note.position.clamp(0, widget.text.length);
+      final end = (note.endPosition > start
+              ? note.endPosition
+              : start + note.quote.length)
+          .clamp(start, widget.text.length);
+      if (end > start) ranges.add((start: start, end: end));
+    }
+    ranges.sort((a, b) => a.start.compareTo(b.start));
+
+    final spans = <TextSpan>[];
+    var cursor = 0;
+    for (final r in ranges) {
+      if (r.start > cursor) {
+        spans.add(TextSpan(text: widget.text.substring(cursor, r.start)));
+      }
+      final s = r.end.clamp(r.start, widget.text.length);
+      if (s > r.start) {
+        spans.add(TextSpan(
+          text: widget.text.substring(r.start, s),
+          style: widget.style.copyWith(
+            backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
+          ),
+        ));
+      }
+      if (s > cursor) cursor = s;
+    }
+    if (cursor < widget.text.length) {
+      spans.add(TextSpan(text: widget.text.substring(cursor)));
+    }
+    if (spans.isEmpty) {
+      spans.add(TextSpan(text: widget.text));
+    }
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading || _session == null) {
@@ -376,8 +418,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
             session: session,
             style: _textStyle,
             palette: _palette,
-            contextMenuBuilder: _buildTextMenu,
             initialProgress: widget.book.progress,
+            notes: _notes,
+            contextMenuBuilderForChapter: (chapter, ctx, editable) =>
+                _buildTextMenuForChapter(chapter, ctx, editable),
             onProgress: (t) {
               if (t.$1 != _chapter) {
                 setState(() {
@@ -415,7 +459,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
               text: session.texts[i],
               style: _textStyle,
               palette: _palette,
-              contextMenuBuilder: _buildTextMenu,
+              notes: _notes.where((n) => n.chapterIdx == i).toList(),
+              contextMenuBuilder: (ctx, editable) =>
+                  _buildTextMenuForChapter(i, ctx, editable),
               onScroll: () => _scheduleSave(),
             ),
           );
@@ -471,6 +517,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     onBack: () => Navigator.pop(context),
                     onSettings: _openSettings,
                     onToc: _openToc,
+                    onNotes: () => _showNotesSheet(),
                   ),
                 ),
                 Positioned(
@@ -526,26 +573,54 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   Widget _buildTextMenu(
       BuildContext context, EditableTextState editableTextState) {
+    return _buildTextMenuForChapter(_chapter, context, editableTextState);
+  }
+
+  Widget _buildTextMenuForChapter(
+      int chapterIdx, BuildContext context, EditableTextState editableTextState) {
+    final val = editableTextState.textEditingValue;
+    final selection = val.selection;
+    final selected = selection.isValid ? selection.textInside(val.text) : '';
+    final start = selection.isValid ? selection.start : -1;
+    final end = selection.isValid ? selection.end : -1;
+    final existing = start >= 0 && end >= start
+        ? _notesForRange(chapterIdx, start, end)
+        : <Note>[];
+
     final buttons = <ContextMenuButtonItem>[
+      if (selected.trim().isNotEmpty)
+        ContextMenuButtonItem(
+          label: '为选中内容添加笔记',
+          onPressed: () {
+            editableTextState.hideToolbar();
+            _openNoteDialogForSelection(chapterIdx, start, end, selected);
+          },
+        ),
+      if (existing.isNotEmpty)
+        ContextMenuButtonItem(
+          label: '查看这段已有笔记',
+          onPressed: () {
+            editableTextState.hideToolbar();
+            _showNotesSheet(existing);
+          },
+        ),
       ContextMenuButtonItem(
         label: '朗读所选文字',
         onPressed: () {
-          final val = editableTextState.textEditingValue;
-          final selected = val.selection.textInside(val.text);
           editableTextState.hideToolbar();
-          if (selected.trim().isNotEmpty) {
-            _speakSelectedText(selected);
-          }
+          if (selected.trim().isNotEmpty) _speakSelectedText(selected);
         },
       ),
       ContextMenuButtonItem(
         label: '从这里开始朗读',
         onPressed: () {
-          final val = editableTextState.textEditingValue;
-          final start = val.selection.isValid ? val.selection.start : -1;
           editableTextState.hideToolbar();
           if (start >= 0) {
-            _speakFromPosition(start);
+            if (chapterIdx == _chapter) {
+              _speakFromPosition(start);
+            } else {
+              _speakFromChapterPosition(chapterIdx, start);
+            }
           }
         },
       ),
@@ -553,10 +628,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
       ContextMenuButtonItem(
         label: '全书搜索',
         onPressed: () {
-          final val = editableTextState.textEditingValue;
-          final q = val.selection.textInside(val.text);
           editableTextState.hideToolbar();
-          if (q.isNotEmpty) _openSearch(initialQuery: q);
+          if (selected.isNotEmpty) _openSearch(initialQuery: selected);
         },
       ),
     ];
@@ -564,6 +637,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
       anchors: editableTextState.contextMenuAnchors,
       buttonItems: buttons,
     );
+  }
+
+  List<Note> _notesForRange(int chapterIdx, int start, int end) {
+    return _notes.where((n) {
+      if (n.chapterIdx != chapterIdx || n.quote.trim().isEmpty) return false;
+      final noteEnd = n.endPosition > n.position
+          ? n.endPosition
+          : n.position + n.quote.length;
+      return n.position < end && noteEnd > start;
+    }).toList();
   }
 
   Future<void> _speakSelectedText(String selected) async {
@@ -819,42 +902,72 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _openNoteDialog() async {
-    final state = context.read<AppState>();
     final body = _pageKeys[_chapter].currentState as _ChapterBodyState?;
     final pos = body?.charOffset ?? 0;
     final text = _session!.texts[_chapter];
-    final snippet = text.length > 40
-        ? text.substring(pos, (pos + 40).clamp(0, text.length))
-        : text;
+    final end = (pos + 80).clamp(0, text.length);
+    final quote = text.substring(pos, end);
+    await _openNoteDialogForSelection(_chapter, pos, end, quote);
+  }
+
+  Future<void> _openNoteDialogForSelection(
+      int chapterIdx, int start, int end, String quote) async {
+    final state = context.read<AppState>();
     final controller = TextEditingController();
+    final chapterText = _session!.texts[chapterIdx];
+    final safeStart = start.clamp(0, chapterText.length);
+    final safeEnd = end.clamp(safeStart, chapterText.length);
+    final selectedQuote = quote.trim().isNotEmpty
+        ? quote
+        : chapterText.substring(safeStart, safeEnd);
+
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _palette.toolbar,
         title: Text('添加笔记', style: TextStyle(color: _palette.toolbarText)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _palette.background,
-                borderRadius: BorderRadius.circular(6),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 140),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _palette.background,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _palette.divider),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    selectedQuote,
+                    style: TextStyle(color: _palette.text, fontSize: 13, height: 1.5),
+                  ),
+                ),
               ),
-              child: Text(snippet,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: _palette.text, fontSize: 13)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLines: 3,
-              style: TextStyle(color: _palette.toolbarText),
-              decoration: const InputDecoration(hintText: '写下你的想法…'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '保存位置：第${chapterIdx + 1}章，原文第$safeStart字',
+                  style: TextStyle(color: _palette.subtle, fontSize: 11),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLines: 5,
+                autofocus: true,
+                style: TextStyle(color: _palette.toolbarText),
+                decoration: const InputDecoration(
+                  hintText: '写下你对这段话的想法、问题或感受…',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -863,25 +976,94 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('保存'),
+            child: const Text('保存笔记'),
           ),
         ],
       ),
     );
-    if (result != null && result.trim().isNotEmpty) {
-      await state.noteRepo.add(Note(
-        bookId: widget.book.id!,
-        chapterIdx: _chapter,
-        position: pos,
-        text: result.trim(),
-        createdAt: DateTime.now(),
-      ));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('笔记已保存')),
-        );
-      }
+
+    if (result == null || result.trim().isEmpty) return;
+    await state.noteRepo.add(Note(
+      bookId: widget.book.id!,
+      chapterIdx: chapterIdx,
+      position: safeStart,
+      endPosition: safeEnd,
+      quote: selectedQuote,
+      text: result.trim(),
+      createdAt: DateTime.now(),
+    ));
+    _notes = await state.noteRepo.getForBook(widget.book.id!);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('笔记已保存（第${chapterIdx + 1}章）'),
+          backgroundColor: _palette.accent,
+        ),
+      );
     }
+  }
+
+  void _showNotesSheet([List<Note>? source]) {
+    final all = source ?? _notes;
+    if (all.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('这本书还没有笔记')),
+      );
+      return;
+    }
+    final sorted = [...all]
+      ..sort((a, b) {
+        final c = a.chapterIdx.compareTo(b.chapterIdx);
+        if (c != 0) return c;
+        return a.position.compareTo(b.position);
+      });
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _palette.toolbar,
+      isScrollControlled: true,
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * 0.72,
+        child: ListView.builder(
+          padding: const EdgeInsets.only(top: 8, bottom: 20),
+          itemCount: sorted.length,
+          itemBuilder: (ctx, i) {
+            final n = sorted[i];
+            return ListTile(
+              leading: Icon(Icons.edit_note, color: _palette.accent),
+              title: Text(
+                n.quote.trim().isEmpty ? '第${n.chapterIdx + 1}章' : n.quote,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _palette.toolbarText),
+              ),
+              subtitle: Text(
+                n.text,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _palette.subtle),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _gotoChapter(n.chapterIdx);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scrollMode) {
+                    _scrollKey.currentState?.jumpToChapter(
+                      n.chapterIdx,
+                      charPos: n.position,
+                    );
+                  } else {
+                    final body = _pageKeys[n.chapterIdx].currentState
+                        as _ChapterBodyState?;
+                    body?.scrollToChar(n.position);
+                  }
+                });
+              },
+            );
+          },
+        ),
+      ),
+    );
   }
 }
 
@@ -892,6 +1074,7 @@ class _TopBar extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onSettings;
   final VoidCallback onToc;
+  final VoidCallback onNotes;
   const _TopBar({
     required this.book,
     required this.chapterTitle,
@@ -899,6 +1082,7 @@ class _TopBar extends StatelessWidget {
     required this.onBack,
     required this.onSettings,
     required this.onToc,
+    required this.onNotes,
   });
 
   @override
@@ -935,6 +1119,11 @@ class _TopBar extends StatelessWidget {
             icon: Icon(Icons.list, color: palette.toolbarText),
             onPressed: onToc,
             tooltip: '目录',
+          ),
+          IconButton(
+            icon: Icon(Icons.edit_note, color: palette.toolbarText),
+            onPressed: onNotes,
+            tooltip: '笔记',
           ),
           IconButton(
             icon: Icon(Icons.text_fields, color: palette.toolbarText),
@@ -1064,6 +1253,7 @@ class _ChapterBody extends StatefulWidget {
   final TextStyle style;
   final ReaderPalette palette;
   final EditableTextContextMenuBuilder? contextMenuBuilder;
+  final List<Note> notes;
   final VoidCallback onScroll;
   const _ChapterBody({
     super.key,
@@ -1071,6 +1261,7 @@ class _ChapterBody extends StatefulWidget {
     required this.style,
     required this.palette,
     this.contextMenuBuilder,
+    this.notes = const [],
     required this.onScroll,
   });
 
@@ -1159,9 +1350,11 @@ class _ChapterBodyState extends State<_ChapterBody> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SelectableText(
-                widget.text,
-                style: widget.style,
+              SelectableText.rich(
+                TextSpan(
+                  style: widget.style,
+                  children: _buildTextSpans(),
+                ),
                 contextMenuBuilder: widget.contextMenuBuilder,
                 textScaler: TextScaler.linear(1),
               ),
