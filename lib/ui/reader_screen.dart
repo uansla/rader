@@ -362,46 +362,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     });
   }
 
-  List<TextSpan> _buildTextSpans() {
-    final ranges = <({int start, int end})>[];
-    for (final note in widget.notes) {
-      if (note.quote.trim().isEmpty) continue;
-      final start = note.position.clamp(0, widget.text.length);
-      final end = (note.endPosition > start
-              ? note.endPosition
-              : start + note.quote.length)
-          .clamp(start, widget.text.length);
-      if (end > start) ranges.add((start: start, end: end));
-    }
-    ranges.sort((a, b) => a.start.compareTo(b.start));
-
-    final spans = <TextSpan>[];
-    var cursor = 0;
-    for (final r in ranges) {
-      if (r.start > cursor) {
-        spans.add(TextSpan(text: widget.text.substring(cursor, r.start)));
-      }
-      final s = r.end.clamp(r.start, widget.text.length);
-      final highlightStart = r.start < cursor ? cursor : r.start;
-      if (s > highlightStart) {
-        spans.add(TextSpan(
-          text: widget.text.substring(highlightStart, s),
-          style: widget.style.copyWith(
-            backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
-          ),
-        ));
-      }
-      if (s > cursor) cursor = s;
-    }
-    if (cursor < widget.text.length) {
-      spans.add(TextSpan(text: widget.text.substring(cursor)));
-    }
-    if (spans.isEmpty) {
-      spans.add(TextSpan(text: widget.text));
-    }
-    return spans;
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading || _session == null) {
@@ -1348,7 +1308,47 @@ class _ChapterBodyState extends State<_ChapterBody> {
     )..layout(maxWidth: _textWidth);
   }
 
-  @override
+    List<TextSpan> _buildTextSpans() {
+    final ranges = <({int start, int end})>[];
+    for (final note in widget.notes) {
+      if (note.quote.trim().isEmpty) continue;
+      final start = note.position.clamp(0, widget.text.length);
+      final end = (note.endPosition > start
+              ? note.endPosition
+              : start + note.quote.length)
+          .clamp(start, widget.text.length);
+      if (end > start) ranges.add((start: start, end: end));
+    }
+    ranges.sort((a, b) => a.start.compareTo(b.start));
+
+    final spans = <TextSpan>[];
+    var cursor = 0;
+    for (final r in ranges) {
+      if (r.start > cursor) {
+        spans.add(TextSpan(text: widget.text.substring(cursor, r.start)));
+      }
+      final s = r.end.clamp(r.start, widget.text.length);
+      final highlightStart = r.start < cursor ? cursor : r.start;
+      if (s > highlightStart) {
+        spans.add(TextSpan(
+          text: widget.text.substring(highlightStart, s),
+          style: widget.style.copyWith(
+            backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
+          ),
+        ));
+      }
+      if (s > cursor) cursor = s;
+    }
+    if (cursor < widget.text.length) {
+      spans.add(TextSpan(text: widget.text.substring(cursor)));
+    }
+    if (spans.isEmpty) {
+      spans.add(TextSpan(text: widget.text));
+    }
+    return spans;
+  }
+
+@override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
