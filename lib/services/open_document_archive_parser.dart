@@ -18,7 +18,7 @@ class OpenDocumentArchiveParser {
     if (file == null) {
       throw FormatException('文档内部缺少 $name');
     }
-    return utf8.decode(file.readBytes(), allowMalformed: true);
+    return utf8.decode(file.content, allowMalformed: true);
   }
 
   static Archive decode(Uint8List bytes) {
