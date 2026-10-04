@@ -158,6 +158,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteBooks(Iterable<Book> selected) async {
+    final ids = selected.where((b) => b.id != null).map((b) => b.id!);
+    await bookRepo.deleteMany(ids);
+    books = await bookRepo.getAll();
+    notifyListeners();
+  }
+
   Future<void> updateSettings(ReaderSettings s) async {
     settings = s;
     await settingsManager.save(s);
