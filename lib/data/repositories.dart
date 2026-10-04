@@ -1,3 +1,4 @@
+import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/book.dart';
@@ -41,15 +42,55 @@ class BookRepository {
   }
 
   Future<void> delete(int id) async {
+    await deleteMany([id]);
+  }
+
+  Future<void> deleteMany(Iterable<int> ids) async {
+    final uniqueIds = ids.toSet().toList();
+    if (uniqueIds.isEmpty) return;
     final db = await AppDatabase.instance;
     await db.transaction((txn) async {
-      await txn.delete('chapters', where: 'book_id = ?', whereArgs: [id]);
-      await txn.delete('bookmarks', where: 'book_id = ?', whereArgs: [id]);
-      await txn.delete('notes', where: 'book_id = ?', whereArgs: [id]);
-      await txn.delete('reading_history',
-          where: 'book_id = ?', whereArgs: [id]);
-      await txn.delete('books', where: 'id = ?', whereArgs: [id]);
+      for (final id in uniqueIds) {
+        final rows = await txn.query('books',
+            columns: ['path'], where: 'id = ?', whereArgs: [id], limit: 1);
+        if (rows.isNotEmpty) {
+          final path = rows.first['path'] as String?;
+          if (path != null && path.isNotEmpty) {
+            await txn.insert(
+              'hidden_books',
+              {
+                'path': path,
+                'removed_at': DateTime.now().millisecondsSinceEpoch,
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+        }
+        await txn.delete('chapters', where: 'book_id = ?', whereArgs: [id]);
+        await txn.delete('bookmarks', where: 'book_id = ?', whereArgs: [id]);
+        await txn.delete('notes', where: 'book_id = ?', whereArgs: [id]);
+        await txn.delete('reading_history',
+            where: 'book_id = ?', whereArgs: [id]);
+        await txn.delete('books', where: 'id = ?', whereArgs: [id]);
+      }
     });
+  }
+
+  Future<Set<String>> getExcludedPaths() async {
+    final db = await AppDatabase.instance;
+    final rows = await db.query('hidden_books', columns: ['path']);
+    return {
+      for (final row in rows) _pathKey(row['path'] as String),
+    };
+  }
+
+  Future<void> restorePath(String path) async {
+    final db = await AppDatabase.instance;
+    await db.delete('hidden_books', where: 'path = ?', whereArgs: [path]);
+  }
+
+  static String _pathKey(String value) {
+    return p.normalize(value).replaceAll('\\\\', '/').toLowerCase();
   }
 
   Future<void> setFavorite(int id, bool fav) async {
