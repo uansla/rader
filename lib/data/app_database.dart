@@ -33,7 +33,7 @@ class AppDatabase {
     _dbPath = dbPath;
     return openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -61,6 +61,15 @@ class AppDatabase {
         CREATE TABLE IF NOT EXISTS read_daily (
           date TEXT PRIMARY KEY,
           minutes INTEGER DEFAULT 0
+        )
+      ''');
+    }
+
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS hidden_books (
+          path TEXT PRIMARY KEY,
+          removed_at INTEGER
         )
       ''');
     }
@@ -145,6 +154,12 @@ class AppDatabase {
       CREATE TABLE read_daily (
         date TEXT PRIMARY KEY,
         minutes INTEGER DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE hidden_books (
+        path TEXT PRIMARY KEY,
+        removed_at INTEGER
       )
     ''');
     await db.execute(
