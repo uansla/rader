@@ -38,13 +38,13 @@ void main() {
     } catch (_) {}
   });
 
-  test('v2 schema: read_daily table + new books columns', () async {
+  test('v3 schema: read_daily + hidden_books tables + new books columns', () async {
     final db = await AppDatabase.instance;
     final tables = (await db
             .rawQuery("SELECT name FROM sqlite_master WHERE type='table'"))
         .map((r) => r['name'])
         .toList();
-    expect(tables, contains('read_daily'));
+    expect(tables, containsAll(['read_daily', 'hidden_books']));
 
     final cols = await db.rawQuery('PRAGMA table_info(books)');
     final names = cols.map((c) => c['name']).toSet();
@@ -89,6 +89,25 @@ void main() {
     expect(updated.title, '新书名');
     expect(updated.author, '作者甲');
     expect(updated.tags, '玄幻,热血');
+  });
+
+  test('BookRepository clear record keeps hidden path for rescans', () async {
+    final repo = BookRepository();
+    final book = Book(
+      title: '待清理',
+      format: 'txt',
+      type: 'text',
+      path: 'C:/reader/books/待清理.txt',
+      addedAt: DateTime(2026, 1, 1),
+    );
+    final id = await repo.insert(book);
+    expect(await repo.getById(id), isNotNull);
+
+    await repo.delete(id);
+
+    expect(await repo.getById(id), isNull);
+    final excluded = await repo.getExcludedPaths();
+    expect(excluded, contains('c:/reader/books/待清理.txt'));
   });
 
   test('SyncService merge: meta fallback match when path differs', () async {
