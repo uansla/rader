@@ -128,7 +128,7 @@ void main() {
     final svc = SyncService(
       books: repo,
       bookmarks: BookmarkRepository(),
-      notes: NoteRepository(),
+      notes: NoteRepository(repo),
     );
     // 导入文件里路径不同，但书名+格式一致 → 应通过元数据匹配到本机书并更新进度
     const json = '{"app":"reader-progress","version":1,"books":['
@@ -150,7 +150,7 @@ void main() {
     final svc = SyncService(
       books: repo,
       bookmarks: BookmarkRepository(),
-      notes: NoteRepository(),
+      notes: NoteRepository(repo),
     );
     const json = '{"app":"reader-progress","version":1,"books":['
         '{"path":"Z:/books/全新.txt","title":"全新","format":"txt",'
