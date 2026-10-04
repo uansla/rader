@@ -8,7 +8,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
+import '../models/book.dart';
 import '../services/format_detector.dart';
+import 'widgets/book_cleanup_dialog.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -137,6 +139,14 @@ class _LibraryScreenState extends State<LibraryScreen>
                       ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: state.books.isEmpty
+                      ? null
+                      : () => showBookCleanupDialog(context, state),
+                  icon: const Icon(Icons.delete_sweep_outlined),
+                  label: const Text('清理书籍/文档记录'),
                 ),
                 const Divider(height: 32),
                 _SectionTitle(icon: Icons.info_outline, text: '状态'),
