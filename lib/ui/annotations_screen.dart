@@ -139,6 +139,8 @@ class _AnnotationsScreenState extends State<AnnotationsScreen> {
           bookId: note.bookId,
           chapterIdx: note.chapterIdx,
           position: note.position,
+          endPosition: note.endPosition,
+          quote: note.quote,
           text: result.trim(),
           createdAt: note.createdAt,
         ));
