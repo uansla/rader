@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -22,7 +23,7 @@ class AppState extends ChangeNotifier {
   final bookRepo = BookRepository();
   final chapterRepo = ChapterRepository();
   final bookmarkRepo = BookmarkRepository();
-  final noteRepo = NoteRepository();
+  late final NoteRepository noteRepo = NoteRepository(bookRepo);
   final folderRepo = FolderRepository();
   final historyRepo = HistoryRepository();
   final readDailyRepo = ReadDailyRepository();
@@ -51,6 +52,13 @@ class AppState extends ChangeNotifier {
     markdownExporter =
         MarkdownExporter(books: bookRepo, bookmarks: bookmarkRepo, notes: noteRepo);
     settings = await settingsManager.load();
+    if (settings.noteStorageDirectory.isEmpty) {
+      final dir = await _defaultNoteStorageDirectory();
+      settings = settings.copyWith(noteStorageDirectory: dir);
+      await settingsManager.save(settings);
+    }
+    noteRepo.configure(settings.noteStorageDirectory);
+    await noteRepo.migrateLegacyDatabaseNotes();
     books = await bookRepo.getAll();
     folders = await folderRepo.getAll();
     if (folders.isEmpty) {
@@ -66,6 +74,41 @@ class AppState extends ChangeNotifier {
     }
     if (settings.autoBackupIntervalDays > 0) {
       await BackupService.maybeBackup(settings.autoBackupIntervalDays);
+    }
+  }
+
+  Future<String> _defaultNoteStorageDirectory() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final notesDir = Directory(p.join(dir.path, 'Reader Notes'));
+    if (!notesDir.existsSync()) {
+      notesDir.createSync(recursive: true);
+    }
+    return notesDir.path;
+  }
+
+  Future<bool> setNoteStorageDirectory(String path) async {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return false;
+    try {
+      final dir = Directory(trimmed);
+      await dir.create(recursive: true);
+      final probe = File(p.join(
+        dir.path,
+        '.reader-note-write-test-${DateTime.now().microsecondsSinceEpoch}',
+      ));
+      await probe.writeAsString('Reader note storage test', encoding: utf8, flush: true);
+      if (await probe.exists()) {
+        await probe.delete();
+      }
+
+      final oldPath = noteRepo.storageDirectory;
+      await noteRepo.changeStorageDirectory(trimmed, migrate: oldPath.isNotEmpty);
+      settings = settings.copyWith(noteStorageDirectory: noteRepo.storageDirectory);
+      await settingsManager.save(settings);
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
