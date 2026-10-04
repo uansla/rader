@@ -37,7 +37,7 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.6
   epubx: ^4.0.0
-  archive: ^4.0.7
+  archive: ^3.6.1
   xml: ^6.5.0
   charset_converter: ^2.5.1
   just_audio: ^0.10.6
