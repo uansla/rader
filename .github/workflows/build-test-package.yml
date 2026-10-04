@@ -84,7 +84,7 @@ jobs:
             "- espeak-ng-data",
             "- ODT / DOCX 阅读支持（以程序实际功能为准）",
             "",
-            "如果 Windows SmartScreen 提示，请选择“更多信息”后运行；这是未签名的测试构建。"
+            "If Windows SmartScreen appears, choose More info and run. This is an unsigned test build."
           ) -join [Environment]::NewLine
           Set-Content -Path (Join-Path $releaseDir "README-Windows-Test.txt") -Value $testNote -Encoding UTF8
 
