@@ -140,20 +140,20 @@ jobs:
           Write-Host "Package created: $zip"
           Get-Item $zip | Format-List FullName, Length
 
-      - name: Publish Windows test ZIP release
+      - name: Publish Windows x64 ZIP to GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $zip = "Reader_v1.3.0_Windows_x64.zip"
-          $tag = "v1.3.0-windows-test-${{ github.run_number }}"
+          $tag = "v1.3.0-windows-${{ github.run_number }}"
           $title = "Reader v1.3.0 Windows x64 测试版 #${{ github.run_number }}"
-          gh release create $tag $zip --title $title --notes "Windows x64 测试版。ZIP 内包含完整 Release 程序及离线中文 TTS 运行文件。" --target $env:GITHUB_SHA
 
-      - name: Upload Windows x64 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Reader_v1.3.0_Windows_x64
-          path: Reader_v1.3.0_Windows_x64.zip
-          if-no-files-found: error
-          retention-days: 30
+          if (-not (Test-Path $zip)) {
+            throw "Windows ZIP was not created: $zip"
+          }
+
+          gh release create $tag $zip `
+            --title $title `
+            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Huayan Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
+            --target $env:GITHUB_SHA
