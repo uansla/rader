@@ -178,7 +178,13 @@ class MarkdownExporter {
         final title = _chapterTitle(n.chapterIdx, chapterTitles);
         buf.writeln('- [${_date(n.createdAt)}] 第${n.chapterIdx + 1}章 $title');
         buf.writeln();
-        buf.writeln('  > ${n.text.replaceAll('\n', '\n  > ')}');
+        if (n.quote.trim().isNotEmpty) {
+          buf.writeln('  原文：');
+          buf.writeln('  > ${n.quote.replaceAll('\\n', '\\n  > ')}');
+          buf.writeln();
+        }
+        buf.writeln('  笔记：');
+        buf.writeln('  > ${n.text.replaceAll('\\n', '\\n  > ')}');
         buf.writeln();
       }
     }
