@@ -23,6 +23,7 @@ class ReaderSettings {
   ReaderPageMode pageMode;
   int autoBackupIntervalDays;
   String customFontFamily;
+  String noteStorageDirectory;
 
   ReaderSettings({
     this.fontSize = 18,
@@ -37,6 +38,7 @@ class ReaderSettings {
     this.pageMode = ReaderPageMode.paged,
     this.autoBackupIntervalDays = 0,
     this.customFontFamily = '',
+    this.noteStorageDirectory = '',
   });
 
   ReaderSettings copyWith({
@@ -52,6 +54,7 @@ class ReaderSettings {
     ReaderPageMode? pageMode,
     int? autoBackupIntervalDays,
     String? customFontFamily,
+    String? noteStorageDirectory,
   }) {
     return ReaderSettings(
       fontSize: fontSize ?? this.fontSize,
@@ -67,6 +70,7 @@ class ReaderSettings {
       autoBackupIntervalDays:
           autoBackupIntervalDays ?? this.autoBackupIntervalDays,
       customFontFamily: customFontFamily ?? this.customFontFamily,
+      noteStorageDirectory: noteStorageDirectory ?? this.noteStorageDirectory,
     );
   }
 }
@@ -84,6 +88,7 @@ class SettingsManager {
   static const _kPageMode = 'reader.pageMode';
   static const _kAutoBackup = 'reader.autoBackupIntervalDays';
   static const _kCustomFont = 'reader.customFontFamily';
+  static const _kNoteStorageDirectory = 'reader.noteStorageDirectory';
 
   Future<ReaderSettings> load() async {
     final sp = await SharedPreferences.getInstance();
@@ -103,6 +108,7 @@ class SettingsManager {
           sp.getInt(_kPageMode) ?? ReaderPageMode.paged.index],
       autoBackupIntervalDays: sp.getInt(_kAutoBackup) ?? 0,
       customFontFamily: sp.getString(_kCustomFont) ?? '',
+      noteStorageDirectory: sp.getString(_kNoteStorageDirectory) ?? '',
     );
   }
 
@@ -120,6 +126,7 @@ class SettingsManager {
     await sp.setInt(_kPageMode, s.pageMode.index);
     await sp.setInt(_kAutoBackup, s.autoBackupIntervalDays);
     await sp.setString(_kCustomFont, s.customFontFamily);
+    await sp.setString(_kNoteStorageDirectory, s.noteStorageDirectory);
   }
 }
 
