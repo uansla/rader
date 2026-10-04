@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -185,39 +188,218 @@ class BookmarkRepository {
 }
 
 class NoteRepository {
+  final BookRepository books;
+  String _storageDirectory = '';
+
+  NoteRepository(this.books);
+
+  void configure(String path) {
+    _storageDirectory = path.trim();
+  }
+
+  String get storageDirectory => _storageDirectory;
+
   Future<List<Note>> getForBook(int bookId) async {
-    final db = await AppDatabase.instance;
-    final rows = await db.query('notes',
-        where: 'book_id = ?', whereArgs: [bookId], orderBy: 'created_at DESC');
-    return rows.map(Note.fromMap).toList();
+    final book = await books.getById(bookId);
+    if (book == null) return const [];
+    return _readBookNotes(book);
   }
 
   Future<List<Note>> getAll() async {
-    final db = await AppDatabase.instance;
-    final rows = await db.query('notes', orderBy: 'created_at DESC');
-    return rows.map(Note.fromMap).toList();
+    final dir = _notesDirectory();
+    if (!dir.existsSync()) return const [];
+    final result = <Note>[];
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File ||
+          !p.basename(entity.path).endsWith('.reader-notes.json')) {
+        continue;
+      }
+      try {
+        final root = json.decode(await entity.readAsString(encoding: utf8));
+        if (root is! Map || root['app'] != 'reader-notes') continue;
+        final items = root['notes'];
+        if (items is! List) continue;
+        for (final raw in items) {
+          if (raw is Map) {
+            result.add(Note.fromMap(Map<String, Object?>.from(raw)));
+          }
+        }
+      } catch (_) {}
+    }
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
   }
 
   Future<void> add(Note note) async {
-    final db = await AppDatabase.instance;
-    await db.insert('notes', note.toMap());
+    final book = await books.getById(note.bookId);
+    if (book == null) return;
+    final list = await _readBookNotes(book);
+    final nextId = list.fold<int>(0, (max, n) => (n.id ?? 0) > max ? (n.id ?? 0) : max) + 1;
+    list.add(_copyNote(note, id: nextId, bookId: book.id!));
+    await _writeBookNotes(book, list);
   }
 
   Future<void> update(Note note) async {
-    final db = await AppDatabase.instance;
-    await db.update('notes', {
-      'chapter_idx': note.chapterIdx,
-      'position': note.position,
-      'end_position': note.endPosition,
-      'quote': note.quote,
-      'text': note.text,
-    }, where: 'id = ?', whereArgs: [note.id]);
+    final book = await books.getById(note.bookId);
+    if (book == null || note.id == null) return;
+    final list = await _readBookNotes(book);
+    final idx = list.indexWhere((n) => n.id == note.id);
+    if (idx < 0) return;
+    list[idx] = _copyNote(note, id: note.id, bookId: book.id!);
+    await _writeBookNotes(book, list);
   }
 
   Future<void> remove(int id) async {
-    final db = await AppDatabase.instance;
-    await db.delete('notes', where: 'id = ?', whereArgs: [id]);
+    for (final book in await books.getAll()) {
+      final list = await _readBookNotes(book);
+      final before = list.length;
+      list.removeWhere((n) => n.id == id);
+      if (list.length != before) {
+        await _writeBookNotes(book, list);
+        return;
+      }
+    }
   }
+
+  /// 把旧版本数据库中的笔记首次迁移到外部笔记文件，然后清空数据库中的笔记正文。
+  Future<int> migrateLegacyDatabaseNotes() async {
+    if (_storageDirectory.isEmpty) return 0;
+    final db = await AppDatabase.instance;
+    final rows = await db.query('notes', orderBy: 'created_at ASC');
+    var migrated = 0;
+    for (final row in rows) {
+      final bookId = row['book_id'] as int?;
+      if (bookId == null) continue;
+      final book = await books.getById(bookId);
+      if (book == null) continue;
+
+      final legacy = Note.fromMap(Map<String, Object?>.from(row));
+      final list = await _readBookNotes(book);
+      final duplicate = list.any((n) =>
+          n.chapterIdx == legacy.chapterIdx &&
+          n.position == legacy.position &&
+          n.text == legacy.text &&
+          n.quote == legacy.quote);
+      if (!duplicate) {
+        final nextId = list.fold<int>(
+                0, (max, n) => (n.id ?? 0) > max ? (n.id ?? 0) : max) +
+            1;
+        list.add(_copyNote(legacy, id: nextId, bookId: book.id!));
+        await _writeBookNotes(book, list);
+        migrated++;
+      }
+    }
+    await db.delete('notes');
+    return migrated;
+  }
+
+  Future<void> changeStorageDirectory(String path, {bool migrate = true}) async {
+    final target = Directory(path.trim());
+    if (path.trim().isEmpty) {
+      throw const FileSystemException('笔记保存位置不能为空');
+    }
+    await target.create(recursive: true);
+
+    final old = _notesDirectory();
+    if (migrate &&
+        _storageDirectory.isNotEmpty &&
+        p.normalize(old.path) != p.normalize(target.path) &&
+        old.existsSync()) {
+      await for (final entity in old.list(followLinks: false)) {
+        if (entity is File &&
+            p.basename(entity.path).endsWith('.reader-notes.json')) {
+          await entity.copy(p.join(target.path, p.basename(entity.path)));
+        }
+      }
+    }
+    _storageDirectory = target.path;
+  }
+
+  Directory _notesDirectory() => Directory(_storageDirectory);
+
+  Future<List<Note>> _readBookNotes(Book book) async {
+    if (_storageDirectory.isEmpty) return const [];
+    final file = _fileForBook(book);
+    if (!await file.exists()) return const [];
+    try {
+      final root = json.decode(await file.readAsString(encoding: utf8));
+      if (root is! Map || root['app'] != 'reader-notes') return const [];
+      final items = root['notes'];
+      if (items is! List) return const [];
+      return [
+        for (final raw in items)
+          if (raw is Map)
+            _copyNote(
+              Note.fromMap(Map<String, Object?>.from(raw)),
+              bookId: book.id!,
+            ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _writeBookNotes(Book book, List<Note> notes) async {
+    if (_storageDirectory.isEmpty) {
+      throw const FileSystemException('请先设置笔记保存位置');
+    }
+    final dir = _notesDirectory();
+    await dir.create(recursive: true);
+    final file = _fileForBook(book);
+    final payload = {
+      'app': 'reader-notes',
+      'version': 1,
+      'book': {
+        'title': book.title,
+        'format': book.format,
+        'path': book.path,
+      },
+      'notes': [
+        for (final n in notes) n.toMap(),
+      ],
+    };
+    await file.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(payload),
+      encoding: utf8,
+      flush: true,
+    );
+  }
+
+  File _fileForBook(Book book) {
+    final safeTitle = book.title
+        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+        .trim()
+        .replaceAll(RegExp(r'[. ]+$'), '');
+    final title = safeTitle.isEmpty ? 'untitled' : safeTitle;
+    final key = _fnv1a(_pathKey(book.path));
+    return File(p.join(
+      _storageDirectory,
+      '${title}_${key.toRadixString(16).padLeft(8, '0')}.reader-notes.json',
+    ));
+  }
+
+  static int _fnv1a(String value) {
+    var hash = 0x811c9dc5;
+    for (final unit in value.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash;
+  }
+
+  static String _pathKey(String value) =>
+      p.normalize(value).replaceAll('\\', '/').toLowerCase();
+
+  static Note _copyNote(Note source, {int? id, int? bookId}) => Note(
+        id: id ?? source.id,
+        bookId: bookId ?? source.bookId,
+        chapterIdx: source.chapterIdx,
+        position: source.position,
+        endPosition: source.endPosition,
+        quote: source.quote,
+        text: source.text,
+        createdAt: source.createdAt,
+      );
 }
 
 class FolderRepository {
