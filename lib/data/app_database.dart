@@ -33,7 +33,7 @@ class AppDatabase {
     _dbPath = dbPath;
     return openDatabase(
       dbPath,
-      version: 3,
+      version: 4,
       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -72,6 +72,18 @@ class AppDatabase {
           removed_at INTEGER
         )
       ''');
+    }
+
+    if (oldVersion < 4) {
+      final noteCols = {
+        for (final r in await db.rawQuery('PRAGMA table_info(notes)')) r['name'] as String
+      };
+      if (!noteCols.contains('quote')) {
+        await db.execute("ALTER TABLE notes ADD COLUMN quote TEXT DEFAULT ''");
+      }
+      if (!noteCols.contains('end_position')) {
+        await db.execute('ALTER TABLE notes ADD COLUMN end_position INTEGER DEFAULT 0');
+      }
     }
   }
 
@@ -129,6 +141,8 @@ class AppDatabase {
         book_id INTEGER NOT NULL,
         chapter_idx INTEGER DEFAULT 0,
         position INTEGER DEFAULT 0,
+        end_position INTEGER DEFAULT 0,
+        quote TEXT DEFAULT '',
         text TEXT DEFAULT '',
         created_at INTEGER
       )
