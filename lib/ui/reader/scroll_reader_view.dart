@@ -226,9 +226,10 @@ class ScrollReaderViewState extends State<ScrollReaderView> {
         spans.add(TextSpan(text: text.substring(cursor, r.start)));
       }
       final end = r.end.clamp(r.start, text.length);
-      if (end > r.start) {
+      final highlightStart = r.start < cursor ? cursor : r.start;
+      if (end > highlightStart) {
         spans.add(TextSpan(
-          text: text.substring(r.start, end),
+          text: text.substring(highlightStart, end),
           style: widget.style.copyWith(
             backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
           ),
