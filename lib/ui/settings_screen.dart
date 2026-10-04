@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -141,6 +142,30 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+          const _Header('笔记'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.folder_special_outlined),
+              title: const Text('笔记保存位置'),
+              subtitle: Text(
+                s.noteStorageDirectory.isEmpty
+                    ? '未设置'
+                    : s.noteStorageDirectory,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.folder_open_outlined),
+              onTap: () => _chooseNoteDirectory(context, state, s),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: Text(
+              '笔记正文和选中的原文会保存到这里，不写入 Reader 数据库。每本书会生成独立的 .reader-notes.json 文件。更换位置时会自动复制已有笔记。',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 8),
           const _Header('统计与同步'),
           Card(
             child: Column(
@@ -241,6 +266,29 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _chooseNoteDirectory(
+      BuildContext context, AppState state, ReaderSettings settings) async {
+    final selected = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: '选择 Reader 笔记保存文件夹',
+      initialDirectory: settings.noteStorageDirectory.isEmpty
+          ? null
+          : settings.noteStorageDirectory,
+    );
+    if (selected == null || selected.isEmpty) return;
+
+    final ok = await state.setNoteStorageDirectory(selected);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? '笔记保存位置已改为：$selected'
+              : '无法写入此文件夹，请选择有读写权限的位置',
+        ),
       ),
     );
   }
