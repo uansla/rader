@@ -206,6 +206,10 @@ class NoteRepository {
   Future<void> update(Note note) async {
     final db = await AppDatabase.instance;
     await db.update('notes', {
+      'chapter_idx': note.chapterIdx,
+      'position': note.position,
+      'end_position': note.endPosition,
+      'quote': note.quote,
       'text': note.text,
     }, where: 'id = ?', whereArgs: [note.id]);
   }
