@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:reader/data/app_database.dart';
 import 'package:reader/data/repositories.dart';
@@ -162,10 +164,23 @@ void main() {
     expect(added!.progress, closeTo(0.1, 0.001));
   });
 
-  test('NoteRepository update edits text', () async {
-    final repo = NoteRepository();
+  test('NoteRepository writes notes to external files', () async {
+    final books = BookRepository();
+    final repo = NoteRepository(books);
+    final notesDir = Directory(p.join(tmp.path, 'reader_notes'));
+    await notesDir.create(recursive: true);
+    repo.configure(notesDir.path);
+
+    final bookId = await books.insert(Book(
+      title: '外部笔记测试',
+      format: 'txt',
+      type: 'text',
+      path: 'C:/reader/外部笔记测试.txt',
+      addedAt: DateTime(2026, 1, 1),
+    ));
+
     await repo.add(Note(
-      bookId: 1,
+      bookId: bookId,
       chapterIdx: 0,
       position: 12,
       endPosition: 28,
@@ -173,20 +188,38 @@ void main() {
       text: '原始笔记',
       createdAt: DateTime(2026, 1, 1),
     ));
-    final existing = (await repo.getForBook(1)).first;
-    await repo.update(Note(
-      id: existing.id,
-      bookId: existing.bookId,
-      chapterIdx: existing.chapterIdx,
-      position: existing.position,
-      endPosition: existing.endPosition,
-      quote: existing.quote,
-      text: '修改后的笔记',
-      createdAt: existing.createdAt,
-    ));
-    final list = await repo.getForBook(1);
-    expect(list.single.text, '修改后的笔记');
+
+    final list = await repo.getForBook(bookId);
+    expect(list.single.text, '原始笔记');
     expect(list.single.quote, '这是被选择并标记的原文');
     expect(list.single.endPosition, 28);
+
+    final files = notesDir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.reader-notes.json'))
+        .toList();
+    expect(files, hasLength(1));
+    final raw = await files.single.readAsString(encoding: utf8);
+    expect(raw, contains('这是被选择并标记的原文'));
+    expect(raw, contains('原始笔记'));
+
+    final db = await AppDatabase.instance;
+    final dbRows = await db.query('notes');
+    expect(dbRows, isEmpty);
+
+    await repo.update(Note(
+      id: list.single.id,
+      bookId: bookId,
+      chapterIdx: list.single.chapterIdx,
+      position: list.single.position,
+      endPosition: list.single.endPosition,
+      quote: list.single.quote,
+      text: '修改后的笔记',
+      createdAt: list.single.createdAt,
+    ));
+    final updated = await repo.getForBook(bookId);
+    expect(updated.single.text, '修改后的笔记');
+    expect(updated.single.quote, '这是被选择并标记的原文');
   });
 }
