@@ -38,7 +38,7 @@ void main() {
     } catch (_) {}
   });
 
-  test('v3 schema: read_daily + hidden_books tables + new books columns', () async {
+  test('v4 schema: notes keep selected quote range', () async {
     final db = await AppDatabase.instance;
     final tables = (await db
             .rawQuery("SELECT name FROM sqlite_master WHERE type='table'"))
@@ -49,6 +49,10 @@ void main() {
     final cols = await db.rawQuery('PRAGMA table_info(books)');
     final names = cols.map((c) => c['name']).toSet();
     expect(names, containsAll(['read_minutes', 'completed', 'cover_color']));
+
+    final noteCols = await db.rawQuery('PRAGMA table_info(notes)');
+    final noteNames = noteCols.map((c) => c['name']).toSet();
+    expect(noteNames, containsAll(['quote', 'end_position']));
   });
 
   test('ReadDailyRepository accumulates minutes and queries range', () async {
@@ -163,7 +167,9 @@ void main() {
     await repo.add(Note(
       bookId: 1,
       chapterIdx: 0,
-      position: 0,
+      position: 12,
+      endPosition: 28,
+      quote: '这是被选择并标记的原文',
       text: '原始笔记',
       createdAt: DateTime(2026, 1, 1),
     ));
@@ -173,10 +179,14 @@ void main() {
       bookId: existing.bookId,
       chapterIdx: existing.chapterIdx,
       position: existing.position,
+      endPosition: existing.endPosition,
+      quote: existing.quote,
       text: '修改后的笔记',
       createdAt: existing.createdAt,
     ));
     final list = await repo.getForBook(1);
     expect(list.single.text, '修改后的笔记');
+    expect(list.single.quote, '这是被选择并标记的原文');
+    expect(list.single.endPosition, 28);
   });
 }
