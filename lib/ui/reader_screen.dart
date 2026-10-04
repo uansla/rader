@@ -902,9 +902,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _openNoteDialog() async {
-    final body = _pageKeys[_chapter].currentState as _ChapterBodyState?;
-    final pos = body?.charOffset ?? 0;
     final text = _session!.texts[_chapter];
+    int pos;
+    if (_scrollMode) {
+      var before = 0;
+      for (var i = 0; i < _chapter; i++) {
+        before += _session!.texts[i].length;
+      }
+      pos = (_scrollCharPos - before).clamp(0, text.length);
+    } else {
+      final body = _pageKeys[_chapter].currentState as _ChapterBodyState?;
+      pos = body?.charOffset ?? 0;
+    }
     final end = (pos + 80).clamp(0, text.length);
     final quote = text.substring(pos, end);
     await _openNoteDialogForSelection(_chapter, pos, end, quote);
