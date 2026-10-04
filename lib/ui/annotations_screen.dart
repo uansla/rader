@@ -84,6 +84,8 @@ class _AnnotationsScreenState extends State<AnnotationsScreen> {
           {
             'chapter_idx': n.chapterIdx,
             'position': n.position,
+            'end_position': n.endPosition,
+            'quote': n.quote,
             'text': n.text,
             'created_at': n.createdAt.millisecondsSinceEpoch,
           }
@@ -252,22 +254,77 @@ class _NoteTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
-      child: ListTile(
-        leading: const Icon(Icons.edit_note),
-        title: Text(note.text, maxLines: 3, overflow: TextOverflow.ellipsis),
-        subtitle: Text(chapterTitle),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 20),
-                onPressed: onEdit),
-            IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20),
-                onPressed: onDelete),
-          ],
-        ),
+      child: InkWell(
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Icon(Icons.edit_note),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      chapterTitle,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                    if (note.quote.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          note.quote,
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(height: 1.45),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 7),
+                    Text(
+                      note.text,
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '点击可回到原文位置',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, size: 20),
+                    onPressed: onEdit,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: onDelete,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
