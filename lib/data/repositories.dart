@@ -318,14 +318,14 @@ class NoteRepository {
   Directory _notesDirectory() => Directory(_storageDirectory);
 
   Future<List<Note>> _readBookNotes(Book book) async {
-    if (_storageDirectory.isEmpty) return const [];
+    if (_storageDirectory.isEmpty) return <Note>[];
     final file = _fileForBook(book);
-    if (!await file.exists()) return const [];
+    if (!await file.exists()) return <Note>[];
     try {
       final root = json.decode(await file.readAsString(encoding: utf8));
-      if (root is! Map || root['app'] != 'reader-notes') return const [];
+      if (root is! Map || root['app'] != 'reader-notes') return <Note>[];
       final items = root['notes'];
-      if (items is! List) return const [];
+      if (items is! List) return <Note>[];
       return [
         for (final raw in items)
           if (raw is Map)
@@ -335,7 +335,7 @@ class NoteRepository {
             ),
       ];
     } catch (_) {
-      return const [];
+      return <Note>[];
     }
   }
 
