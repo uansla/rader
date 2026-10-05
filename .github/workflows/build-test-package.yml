@@ -138,9 +138,11 @@ jobs:
           $releaseDir = "build/windows/x64/runner/Release"
           $exe = Join-Path $releaseDir "reader.exe"
 
-          & $exe --install-context-menu
-          if ($LASTEXITCODE -ne 0) {
-            throw "reader.exe --install-context-menu failed with exit code $LASTEXITCODE"
+          $install = Start-Process -FilePath $exe `
+            -ArgumentList "--install-context-menu" `
+            -Wait -PassThru -WindowStyle Hidden
+          if ($install.ExitCode -ne 0) {
+            throw "reader.exe --install-context-menu failed with exit code $($install.ExitCode)"
           }
 
           $regKey = "HKCU:\Software\Classes\SystemFileAssociations\.epub\shell\Reader"
@@ -156,9 +158,11 @@ jobs:
           $command = (Get-ItemProperty -Path $commandKey -Name '(default)').'(default)'
           Write-Host "Registered command: $command"
 
-          & $exe --uninstall-context-menu
-          if ($LASTEXITCODE -ne 0) {
-            throw "reader.exe --uninstall-context-menu failed with exit code $LASTEXITCODE"
+          $uninstall = Start-Process -FilePath $exe `
+            -ArgumentList "--uninstall-context-menu" `
+            -Wait -PassThru -WindowStyle Hidden
+          if ($uninstall.ExitCode -ne 0) {
+            throw "reader.exe --uninstall-context-menu failed with exit code $($uninstall.ExitCode)"
           }
 
           if (Test-Path $regKey) {
