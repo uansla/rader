@@ -84,7 +84,7 @@ jobs:
             "Windows 右键打开：",
             "1. 首次运行 reader.exe 会自动安装右键菜单。",
             "2. 也可以运行 Install-Reader-Right-Click.cmd 手动安装。",
-            "3. 在支持的 TXT / EPUB / MOBI / AZW3 / HTML / MD / FB2 / ODT / DOCX / 音频文件上右键，选择“用 Reader 打开”。",
+            "3. 在支持的 TXT / EPUB / MOBI / AZW3 / HTML / MD / FB2 / ODT / DOCX / 音频文件上右键，选择用 Reader 打开。",
             "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
             "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
             "",
@@ -233,5 +233,5 @@ jobs:
 
           gh release create $tag $zip `
             --title $title `
-            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择“用 Reader 打开”。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Huayan Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
+            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Huayan Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
             --target $env:GITHUB_SHA
