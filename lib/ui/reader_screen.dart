@@ -532,11 +532,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return keyboard;
   }
 
-  Widget _buildTextMenu(
-      BuildContext context, EditableTextState editableTextState) {
-    return _buildTextMenuForChapter(_chapter, context, editableTextState);
-  }
-
   Widget _buildTextMenuForChapter(
       int chapterIdx, BuildContext context, EditableTextState editableTextState) {
     final val = editableTextState.textEditingValue;
