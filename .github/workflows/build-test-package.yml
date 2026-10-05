@@ -207,7 +207,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.3.1_Windows_x64.zip"
+          $zip = "Reader_v1.3.2_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -227,9 +227,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.3.1_Windows_x64.zip"
-          $tag = "v1.3.1-windows-${{ github.run_number }}"
-          $title = "Reader v1.3.1 Windows x64 测试版 #${{ github.run_number }}"
+          $zip = "Reader_v1.3.2_Windows_x64.zip"
+          $tag = "v1.3.2-windows-${{ github.run_number }}"
+          $title = "Reader v1.3.2 Windows x64 测试版 #${{ github.run_number }}"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"

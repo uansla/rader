@@ -8,6 +8,7 @@ import 'package:reader/data/app_database.dart';
 import 'package:reader/data/repositories.dart';
 import 'package:reader/models/book.dart';
 import 'package:reader/models/note.dart';
+import 'package:reader/services/scanner_service.dart';
 import 'package:reader/services/sync_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -114,6 +115,49 @@ void main() {
     expect(await repo.getById(id), isNull);
     final excluded = await repo.getExcludedPaths();
     expect(excluded.single.toLowerCase(), contains('待清理.txt'));
+  });
+
+  test('BookRepository delete can remove without hiding path', () async {
+    final repo = BookRepository();
+    final book = Book(
+      title: '可重新扫描',
+      format: 'txt',
+      type: 'text',
+      path: 'C:/reader/books/可重新扫描.txt',
+      addedAt: DateTime(2026, 1, 1),
+    );
+    final id = await repo.insert(book);
+    await repo.deleteMany([id], hideFromRescan: false);
+
+    expect(await repo.getById(id), isNull);
+    final excluded = await repo.getExcludedPaths();
+    expect(
+      excluded.contains('c:/reader/books/可重新扫描.txt'),
+      isFalse,
+    );
+  });
+
+  test('scanner keeps record when source file is temporarily unavailable', () async {
+    final repo = BookRepository();
+    final chapters = ChapterRepository();
+    final scanDir = Directory(p.join(
+      tmp.path,
+      'missing_source_${DateTime.now().microsecondsSinceEpoch}',
+    ));
+    await scanDir.create(recursive: true);
+    final sourcePath = p.join(scanDir.path, '离线文件.txt');
+    final id = await repo.insert(Book(
+      title: '离线文件',
+      format: 'txt',
+      type: 'text',
+      path: sourcePath,
+      addedAt: DateTime(2026, 1, 1),
+    ));
+
+    final scanner = ScannerService(repo, chapters);
+    await scanner.scanDirectories([scanDir.path]);
+
+    expect(await repo.getById(id), isNotNull);
   });
 
   test('SyncService merge: meta fallback match when path differs', () async {

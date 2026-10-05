@@ -7,7 +7,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
-import '../services/format_detector.dart';
 import 'widgets/book_cleanup_dialog.dart';
 
 class LibraryScreen extends StatefulWidget {

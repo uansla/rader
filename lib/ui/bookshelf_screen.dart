@@ -182,7 +182,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           IconButton(
             icon: const Icon(Icons.delete_sweep_outlined),
             tooltip: '选择并清理书籍/文档记录',
-            onPressed: _enterSelectionMode,
+            onPressed: () => _enterSelectionMode(),
           ),
           IconButton(
             icon: state.scanning
@@ -385,7 +385,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     final state = context.read<AppState>();
     final action = await _showBookContextMenu(
       context,
-      state,
       book,
       globalPosition,
     );
@@ -958,13 +957,82 @@ class _SelectionMark extends StatelessWidget {
   }
 }
 
+
+void _showBookMenu(
+  BuildContext context,
+  AppState state,
+  Book book,
+  Future<void> Function() onReturn,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: Text(
+              book.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              _sourceAvailable(book) ? book.path : '文件当前不可用：请连接原来的硬盘/U盘/存储卡',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          ListTile(
+            leading: Icon(book.isFavorite ? Icons.star : Icons.star_border),
+            title: Text(book.isFavorite ? '取消收藏' : '收藏'),
+            onTap: () async {
+              await state.toggleFavorite(book);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.bookmark_outline),
+            title: const Text('查看标注'),
+            onTap: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => AnnotationsScreen(book: book)),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('删除记录'),
+            subtitle: const Text('不删除原文件，之后重新扫描可以再次加入'),
+            onTap: () async {
+              Navigator.pop(ctx);
+              await state.removeBooks([book]);
+              await onReturn();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_sweep_outlined),
+            title: const Text('清理记录'),
+            subtitle: const Text('不删除原文件，清理后禁止自动重新扫描'),
+            onTap: () async {
+              Navigator.pop(ctx);
+              await state.cleanupBooks([book]);
+              await onReturn();
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 bool _sourceAvailable(Book book) {
   return FileSystemEntity.typeSync(book.path) != FileSystemEntityType.notFound;
 }
 
 Future<String?> _showBookContextMenu(
   BuildContext context,
-  AppState state,
   Book book,
   Offset globalPosition,
 ) async {

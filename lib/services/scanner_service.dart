@@ -56,7 +56,7 @@ class ScannerService {
     final excludedPaths = await _books.getExcludedPaths();
     final audioByDir = <String, List<File>>{};
 
-        for (final dir in dirs) {
+    for (final dir in dirs) {
       if (!Directory(dir).existsSync()) continue;
       try {
         await for (final entity
@@ -82,7 +82,6 @@ class ScannerService {
     }
     return summary;
   }
-
 
   bool _isTextFormat(String fmt) {
     return const {
