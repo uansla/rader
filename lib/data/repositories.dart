@@ -48,7 +48,10 @@ class BookRepository {
     await deleteMany([id]);
   }
 
-  Future<void> deleteMany(Iterable<int> ids) async {
+  Future<void> deleteMany(
+    Iterable<int> ids, {
+    bool hideFromRescan = true,
+  }) async {
     final uniqueIds = ids.toSet().toList();
     if (uniqueIds.isEmpty) return;
     final db = await AppDatabase.instance;
@@ -56,7 +59,7 @@ class BookRepository {
       for (final id in uniqueIds) {
         final rows = await txn.query('books',
             columns: ['path'], where: 'id = ?', whereArgs: [id], limit: 1);
-        if (rows.isNotEmpty) {
+        if (hideFromRescan && rows.isNotEmpty) {
           final path = rows.first['path'] as String?;
           if (path != null && path.isNotEmpty) {
             await txn.insert(

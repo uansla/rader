@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +12,6 @@ import 'history_screen.dart';
 import 'player_screen.dart';
 import 'reader_screen.dart';
 import 'stats_screen.dart';
-import 'widgets/book_cleanup_dialog.dart';
 import 'widgets/book_cover.dart';
 
 class BookshelfScreen extends StatefulWidget {
@@ -29,6 +30,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   int _todayMinutes = 0;
   int _streak = 0;
   bool _statsLoaded = false;
+  bool _selectionMode = false;
+  final Set<int> _selectedBookIds = <int>{};
 
   @override
   void initState() {
@@ -116,8 +119,43 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('书架'),
-        actions: [
+        title: Text(
+          _selectionMode ? '已选择 ${_selectedBookIds.length} 本' : '书架',
+        ),
+        actions: _selectionMode
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: '取消选择',
+                  onPressed: _exitSelectionMode,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.select_all),
+                  tooltip: '全选当前显示',
+                  onPressed: books.isEmpty ? null : () => _selectAll(books),
+                ),
+                if (_selectedBookIds.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: '删除记录',
+                    onPressed: () => _confirmSelectedAction(
+                      context,
+                      state,
+                      cleanup: false,
+                    ),
+                  ),
+                if (_selectedBookIds.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    tooltip: '清理记录',
+                    onPressed: () => _confirmSelectedAction(
+                      context,
+                      state,
+                      cleanup: true,
+                    ),
+                  ),
+              ]
+            : [
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () => _showSearch(context),
@@ -143,8 +181,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.delete_sweep_outlined),
-            tooltip: '清理书籍/文档记录',
-            onPressed: () => showBookCleanupDialog(context, state),
+            tooltip: '选择并清理书籍/文档记录',
+            onPressed: _enterSelectionMode,
           ),
           IconButton(
             icon: state.scanning
@@ -220,13 +258,199 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
               child: books.isEmpty
                   ? _EmptyView(scanning: state.scanning)
                   : (gridMode
-                      ? _BookGrid(books: books, onReturn: _loadStats)
-                      : _BookList(books: books, onReturn: _loadStats)),
+                      ? _BookGrid(
+                          books: books,
+                          onReturn: _loadStats,
+                          selectionMode: _selectionMode,
+                          selectedBookIds: _selectedBookIds,
+                          onToggleSelection: _toggleSelection,
+                          onRightClick: _showRightClickMenu,
+                        )
+                      : _BookList(
+                          books: books,
+                          onReturn: _loadStats,
+                          selectionMode: _selectionMode,
+                          selectedBookIds: _selectedBookIds,
+                          onToggleSelection: _toggleSelection,
+                          onRightClick: _showRightClickMenu,
+                        )),
             ),
           ],
         ),
       ),
     );
+  }
+
+  void _enterSelectionMode({Book? initial}) {
+    setState(() {
+      _selectionMode = true;
+      if (initial?.id != null) _selectedBookIds.add(initial!.id!);
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedBookIds.clear();
+    });
+  }
+
+  void _toggleSelection(Book book) {
+    final id = book.id;
+    if (id == null) return;
+    setState(() {
+      _selectionMode = true;
+      if (_selectedBookIds.contains(id)) {
+        _selectedBookIds.remove(id);
+      } else {
+        _selectedBookIds.add(id);
+      }
+    });
+  }
+
+  void _selectAll(List<Book> visibleBooks) {
+    final ids = visibleBooks.where((b) => b.id != null).map((b) => b.id!).toList();
+    setState(() {
+      if (ids.isNotEmpty && ids.every(_selectedBookIds.contains)) {
+        _selectedBookIds.removeAll(ids);
+      } else {
+        _selectedBookIds.addAll(ids);
+      }
+    });
+  }
+
+  List<Book> _selectedBooks(AppState state) {
+    return state.books
+        .where((b) => b.id != null && _selectedBookIds.contains(b.id))
+        .toList();
+  }
+
+  Future<void> _confirmSelectedAction(
+    BuildContext context,
+    AppState state, {
+    required bool cleanup,
+  }) async {
+    final selected = _selectedBooks(state);
+    if (selected.isEmpty) return;
+    final count = selected.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(cleanup
+            ? '清理选中的 ${count} 条记录？'
+            : '删除选中的 ${count} 条记录？'),
+        content: Text(
+          cleanup
+              ? '只清理 Reader 中的导入/扫描记录，不删除硬盘、U盘、存储卡上的原文件。清理后也不会被自动扫描重新加入。'
+              : '只从 Reader 书架删除记录，不删除原文件。以后重新扫描目录时可以再次加入。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(cleanup ? '清理' : '删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (cleanup) {
+      await state.cleanupBooks(selected);
+    } else {
+      await state.removeBooks(selected);
+    }
+    if (!mounted) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedBookIds.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          cleanup
+              ? '已清理 ${count} 条记录'
+              : '已删除 ${count} 条记录',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRightClickMenu(
+    Book book,
+    Offset globalPosition,
+  ) async {
+    final state = context.read<AppState>();
+    final action = await _showBookContextMenu(
+      context,
+      state,
+      book,
+      globalPosition,
+    );
+    if (!mounted || action == null) return;
+
+    switch (action) {
+      case 'open':
+        if (book.isAudio) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PlayerScreen(book: book)),
+          );
+        } else {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => ReaderScreen(book: book)),
+          );
+        }
+        await _loadStats();
+        break;
+      case 'favorite':
+        await state.toggleFavorite(book);
+        break;
+      case 'remove':
+      case 'cleanup':
+        final cleanup = action == 'cleanup';
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(cleanup ? '清理这条记录？' : '删除这条记录？'),
+            content: Text(
+              cleanup
+                  ? '只清理 Reader 的导入记录，不删除原文件；清理后不会自动重新扫描加入。\n${book.title}'
+                  : '只从 Reader 书架删除记录，不删除原文件；以后重新扫描可以再次加入。\n${book.title}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(cleanup ? '清理' : '删除'),
+              ),
+            ],
+          ),
+        );
+        if (ok == true) {
+          if (cleanup) {
+            await state.cleanupBooks([book]);
+          } else {
+            await state.removeBooks([book]);
+          }
+        }
+        break;
+      case 'annotations':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => AnnotationsScreen(book: book)),
+        );
+        break;
+      case 'edit':
+        await _showEditDialog(context, state, book, _loadStats);
+        break;
+    }
   }
 
   void _showSearch(BuildContext context) {
@@ -353,7 +577,19 @@ class _StatsCard extends StatelessWidget {
 class _BookGrid extends StatelessWidget {
   final List<Book> books;
   final Future<void> Function() onReturn;
-  const _BookGrid({required this.books, required this.onReturn});
+  final bool selectionMode;
+  final Set<int> selectedBookIds;
+  final ValueChanged<Book> onToggleSelection;
+  final void Function(Book, Offset) onRightClick;
+
+  const _BookGrid({
+    required this.books,
+    required this.onReturn,
+    required this.selectionMode,
+    required this.selectedBookIds,
+    required this.onToggleSelection,
+    required this.onRightClick,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -367,7 +603,17 @@ class _BookGrid extends StatelessWidget {
         childAspectRatio: 72 / 130,
       ),
       itemCount: books.length,
-      itemBuilder: (context, i) => _BookCell(book: books[i], onReturn: onReturn),
+      itemBuilder: (context, i) {
+        final book = books[i];
+        return _BookCell(
+          book: book,
+          onReturn: onReturn,
+          selectionMode: selectionMode,
+          selected: book.id != null && selectedBookIds.contains(book.id),
+          onToggleSelection: onToggleSelection,
+          onRightClick: onRightClick,
+        );
+      },
     );
   }
 }
@@ -375,13 +621,33 @@ class _BookGrid extends StatelessWidget {
 class _BookList extends StatelessWidget {
   final List<Book> books;
   final Future<void> Function() onReturn;
-  const _BookList({required this.books, required this.onReturn});
+  final bool selectionMode;
+  final Set<int> selectedBookIds;
+  final ValueChanged<Book> onToggleSelection;
+  final void Function(Book, Offset) onRightClick;
+
+  const _BookList({
+    required this.books,
+    required this.onReturn,
+    required this.selectionMode,
+    required this.selectedBookIds,
+    required this.onToggleSelection,
+    required this.onRightClick,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        for (final b in books) _BookListTile(book: b, onReturn: onReturn),
+        for (final b in books)
+          _BookListTile(
+            book: b,
+            onReturn: onReturn,
+            selectionMode: selectionMode,
+            selected: b.id != null && selectedBookIds.contains(b.id),
+            onToggleSelection: onToggleSelection,
+            onRightClick: onRightClick,
+          ),
       ],
     );
   }
@@ -390,34 +656,75 @@ class _BookList extends StatelessWidget {
 class _BookListTile extends StatelessWidget {
   final Book book;
   final Future<void> Function() onReturn;
-  const _BookListTile({required this.book, required this.onReturn});
+  final bool selectionMode;
+  final bool selected;
+  final ValueChanged<Book> onToggleSelection;
+  final void Function(Book, Offset) onRightClick;
+
+  const _BookListTile({
+    required this.book,
+    required this.onReturn,
+    required this.selectionMode,
+    required this.selected,
+    required this.onToggleSelection,
+    required this.onRightClick,
+  });
 
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
-    return ListTile(
-      leading: BookCover(book: book, width: 40, height: 56),
-      title: Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(_subtitle(),
-          maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (book.readMinutes > 0)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Icon(Icons.timer_outlined,
-                  size: 16, color: Theme.of(context).colorScheme.outline),
+    final available = _sourceAvailable(book);
+    return GestureDetector(
+      onSecondaryTapUp: (details) => onRightClick(book, details.globalPosition),
+      child: ListTile(
+        selected: selected,
+        leading: Stack(
+          children: [
+            BookCover(book: book, width: 40, height: 56),
+            if (selectionMode)
+              Positioned(
+                left: -2,
+                top: -2,
+                child: _SelectionMark(selected: selected),
+              ),
+          ],
+        ),
+        title: Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          available ? _subtitle() : '${_subtitle()} · 文件不可用',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (book.readMinutes > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Icon(
+                  Icons.timer_outlined,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            IconButton(
+              icon: Icon(
+                book.isFavorite ? Icons.star : Icons.star_border,
+                color: book.isFavorite ? Colors.amber : null,
+              ),
+              onPressed: selectionMode ? null : () => state.toggleFavorite(book),
             ),
-          IconButton(
-            icon: Icon(book.isFavorite ? Icons.star : Icons.star_border,
-                color: book.isFavorite ? Colors.amber : null),
-            onPressed: () => state.toggleFavorite(book),
-          ),
-        ],
+          ],
+        ),
+        onTap: () {
+          if (selectionMode) {
+            onToggleSelection(book);
+          } else {
+            _open(context, state);
+          }
+        },
+        onLongPress: selectionMode ? null : () => _showMenu(context, state),
       ),
-      onTap: () => _open(context, state),
-      onLongPress: () => _showMenu(context, state),
     );
   }
 
@@ -438,11 +745,15 @@ class _BookListTile extends StatelessWidget {
 
   Future<void> _open(BuildContext context, AppState state) async {
     if (book.isAudio) {
-      await Navigator.push(context,
-          MaterialPageRoute(builder: (_) => PlayerScreen(book: book)));
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PlayerScreen(book: book)),
+      );
     } else {
-      await Navigator.push(context,
-          MaterialPageRoute(builder: (_) => ReaderScreen(book: book)));
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ReaderScreen(book: book)),
+      );
     }
     await onReturn();
   }
@@ -455,65 +766,133 @@ class _BookListTile extends StatelessWidget {
 class _BookCell extends StatelessWidget {
   final Book book;
   final Future<void> Function() onReturn;
-  const _BookCell({required this.book, required this.onReturn});
+  final bool selectionMode;
+  final bool selected;
+  final ValueChanged<Book> onToggleSelection;
+  final void Function(Book, Offset) onRightClick;
+
+  const _BookCell({
+    required this.book,
+    required this.onReturn,
+    required this.selectionMode,
+    required this.selected,
+    required this.onToggleSelection,
+    required this.onRightClick,
+  });
 
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => _open(context, state),
-      onLongPress: () => _showMenu(context, state),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              BookCover(book: book, width: double.infinity, height: 96),
-              if (book.readMinutes > 0)
-                Positioned(
-                  right: 4,
-                  top: 4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.timer, size: 10, color: Colors.white),
-                        const SizedBox(width: 2),
-                        Text(_fmtMinutes(book.readMinutes),
-                            style: const TextStyle(color: Colors.white, fontSize: 9)),
-                      ],
-                    ),
+    final scheme = Theme.of(context).colorScheme;
+    final available = _sourceAvailable(book);
+    return GestureDetector(
+      onSecondaryTapUp: (details) => onRightClick(book, details.globalPosition),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          if (selectionMode) {
+            onToggleSelection(book);
+          } else {
+            _open(context, state);
+          }
+        },
+        onLongPress: selectionMode ? null : () => _showMenu(context, state),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                Opacity(
+                  opacity: available ? 1 : 0.55,
+                  child: BookCover(
+                    book: book,
+                    width: double.infinity,
+                    height: 96,
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            book.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          Text(
-            _subtitle(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.outline),
-          ),
-        ],
+                if (!available)
+                  Positioned(
+                    left: 4,
+                    top: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.surface.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.folder_off_outlined, size: 11),
+                          SizedBox(width: 2),
+                          Text('文件不可用', style: TextStyle(fontSize: 9)),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (selectionMode)
+                  Positioned(
+                    left: 4,
+                    bottom: 4,
+                    child: _SelectionMark(selected: selected),
+                  ),
+                if (book.readMinutes > 0)
+                  Positioned(
+                    right: 4,
+                    top: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.timer, size: 10, color: Colors.white),
+                          const SizedBox(width: 2),
+                          Text(
+                            ${_fmtMinutes(book.readMinutes)},
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              book.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            Text(
+              '${_subtitle()}${available ? '' : ' · 文件不可用'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   static String _fmtMinutes(int m) {
-    if (m < 60) return '$m分';
+    if (m < 60) return '${m}分';
     return '${(m / 60).floor()}时${m % 60}分';
   }
 
@@ -534,11 +913,15 @@ class _BookCell extends StatelessWidget {
 
   Future<void> _open(BuildContext context, AppState state) async {
     if (book.isAudio) {
-      await Navigator.push(context,
-          MaterialPageRoute(builder: (_) => PlayerScreen(book: book)));
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PlayerScreen(book: book)),
+      );
     } else {
-      await Navigator.push(context,
-          MaterialPageRoute(builder: (_) => ReaderScreen(book: book)));
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ReaderScreen(book: book)),
+      );
     }
     await onReturn();
   }
@@ -548,80 +931,84 @@ class _BookCell extends StatelessWidget {
   }
 }
 
-void _showBookMenu(BuildContext context, AppState state, Book book,
-    Future<void> Function() onReturn) {
-  showModalBottomSheet<void>(
-    context: context,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            title: Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-          ListTile(
-            leading: Icon(book.isFavorite ? Icons.star : Icons.star_border),
-            title: Text(book.isFavorite ? '取消收藏' : '收藏'),
-            onTap: () {
-              state.toggleFavorite(book);
-              Navigator.pop(ctx);
-            },
-          ),
-          ListTile(
-            leading: Icon(book.completed ? Icons.undo : Icons.check_circle_outline),
-            title: Text(book.completed ? '取消已读完' : '标记为已读完'),
-            onTap: () async {
-              await state.bookRepo.setCompleted(book.id!, !book.completed);
-              await state.scan(dirs: const []);
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.edit_outlined),
-            title: const Text('编辑信息'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _showEditDialog(context, state, book, onReturn);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.bookmark_outline),
-            title: const Text('查看标注'),
-            onTap: () {
-              Navigator.pop(ctx);
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => AnnotationsScreen(book: book)));
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline),
-            title: const Text('删除记录'),
-            onTap: () async {
-              Navigator.pop(ctx);
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (c) => AlertDialog(
-                  title: const Text('删除该书？'),
-                  content: Text('仅从书架移除记录，不删除磁盘文件。\n${book.title}'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(c, false),
-                        child: const Text('取消')),
-                    TextButton(
-                        onPressed: () => Navigator.pop(c, true),
-                        child: const Text('删除')),
-                  ],
-                ),
-              );
-              if (ok == true) {
-                await state.deleteBook(book);
-                await onReturn();
-              }
-            },
-          ),
+class _SelectionMark extends StatelessWidget {
+  final bool selected;
+  const _SelectionMark({required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: selected ? scheme.primary : scheme.surface,
+        shape: BoxShape.circle,
+        border: Border.all(color: scheme.outline, width: 1.5),
+        boxShadow: const [
+          BoxShadow(blurRadius: 3, offset: Offset(0, 1)),
         ],
       ),
+      child: Icon(
+        selected ? Icons.check : Icons.circle_outlined,
+        size: 16,
+        color: selected ? scheme.onPrimary : scheme.outline,
+      ),
+    );
+  }
+}
+
+bool _sourceAvailable(Book book) {
+  return FileSystemEntity.typeSync(book.path) != FileSystemEntityType.notFound;
+}
+
+Future<String?> _showBookContextMenu(
+  BuildContext context,
+  AppState state,
+  Book book,
+  Offset globalPosition,
+) async {
+  return showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(
+      globalPosition.dx,
+      globalPosition.dy,
+      globalPosition.dx,
+      globalPosition.dy,
     ),
+    items: [
+      PopupMenuItem<String>(
+        value: 'open',
+        enabled: _sourceAvailable(book),
+        child: Text(
+          _sourceAvailable(book)
+              ? '打开'
+              : '打开（文件当前不可用）',
+        ),
+      ),
+      PopupMenuItem<String>(
+        value: 'favorite',
+        child: Text(book.isFavorite ? '取消收藏' : '收藏'),
+      ),
+      const PopupMenuDivider(),
+      const PopupMenuItem<String>(
+        value: 'remove',
+        child: Text('删除记录'),
+      ),
+      const PopupMenuItem<String>(
+        value: 'cleanup',
+        child: Text('清理记录并禁止再次自动扫描'),
+      ),
+      const PopupMenuDivider(),
+      const PopupMenuItem<String>(
+        value: 'annotations',
+        child: Text('查看标注'),
+      ),
+      const PopupMenuItem<String>(
+        value: 'edit',
+        child: Text('编辑信息'),
+      ),
+    ],
   );
 }
 

@@ -130,55 +130,69 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<Book?> openExternalFile(String path) async {
+  /// 仅登记外部文件路径，不复制文件内容到 Reader。
+  /// 手动重新导入时会解除该路径的“清理后不再扫描”状态。
+  Future<Book?> registerExternalFile(String path) async {
     try {
-      final src=File(path);
+      final src = File(path);
       if (!await src.exists()) return null;
 
-      final absolutePath=p.normalize(src.absolute.path);
-      final format=FormatDetector.detectFormat(absolutePath);
-      if (format==null) return null;
+      final absolutePath = p.normalize(src.absolute.path);
+      final format = FormatDetector.detectFormat(absolutePath);
+      if (format == null) return null;
 
-      var book=await bookRepo.getByPath(absolutePath);
-      book ??=await bookRepo.getByPath(path);
-
-      if (book==null) {
-        final stat=await src.stat();
-        final isAudio=FormatDetector.audioExts.contains(format);
-        final newBook=Book(
-          title:p.basenameWithoutExtension(absolutePath),
-          format:format,
-          type:isAudio ? 'audio' : 'text',
-          path:absolutePath,
-          fileSize:stat.size,
-          totalChapters:isAudio ? 1 : 0,
-          addedAt:DateTime.now(),
+      await bookRepo.restorePath(absolutePath);
+      var book = await bookRepo.getByPath(absolutePath);
+      if (book == null) {
+        final stat = await src.stat();
+        final isAudio = FormatDetector.audioExts.contains(format);
+        final newBook = Book(
+          title: p.basenameWithoutExtension(absolutePath),
+          format: format,
+          type: isAudio ? 'audio' : 'text',
+          path: absolutePath,
+          fileSize: stat.size,
+          totalChapters: isAudio ? 1 : 0,
+          addedAt: DateTime.now(),
         );
-        final id=await bookRepo.insert(newBook);
-        book=newBook.copyWith(id:id);
+        final id = await bookRepo.insert(newBook);
+        book = newBook.copyWith(id: id);
 
         if (isAudio) {
           await chapterRepo.replaceForBook(
             id,
             [
               Chapter(
-                bookId:id,
-                idx:0,
-                title:p.basenameWithoutExtension(absolutePath),
-                filePath:absolutePath,
+                bookId: id,
+                idx: 0,
+                title: p.basenameWithoutExtension(absolutePath),
+                filePath: absolutePath,
               ),
             ],
           );
         }
+      } else {
+        final stat = await src.stat();
+        if (book.fileSize != stat.size) {
+          await bookRepo.update(book.copyWith(fileSize: stat.size));
+          book = book.copyWith(fileSize: stat.size);
+        }
       }
 
-      books=await bookRepo.getAll();
-      await recordHistory(book.id!);
+      books = await bookRepo.getAll();
       notifyListeners();
       return book;
     } catch (_) {
       return null;
     }
+  }
+
+  /// 由 Windows 右键菜单调用：登记路径后直接打开，不缓存原文。
+  Future<Book?> openExternalFile(String path) async {
+    final book = await registerExternalFile(path);
+    if (book == null) return null;
+    await recordHistory(book.id!);
+    return book;
   }
 
   Future<bool> installWindowsContextMenu() async {

@@ -56,9 +56,7 @@ class ScannerService {
     final excludedPaths = await _books.getExcludedPaths();
     final audioByDir = <String, List<File>>{};
 
-    await _cleanupMissing();
-
-    for (final dir in dirs) {
+        for (final dir in dirs) {
       if (!Directory(dir).existsSync()) continue;
       try {
         await for (final entity
@@ -85,15 +83,6 @@ class ScannerService {
     return summary;
   }
 
-  Future<void> _cleanupMissing() async {
-    final all = await _books.getAll();
-    for (final b in all) {
-      final type = FileSystemEntity.typeSync(b.path);
-      if (type == FileSystemEntityType.notFound) {
-        await _books.delete(b.id!);
-      }
-    }
-  }
 
   bool _isTextFormat(String fmt) {
     return const {

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
@@ -269,42 +268,39 @@ class _LibraryScreenState extends State<LibraryScreen>
     if (mounted) await _importPaths(paths, context.read<AppState>());
   }
 
-  Future<void> _importPaths(List<String> paths, AppState? cachedState) async {
+  Future<void> _importPaths(
+      List<String> paths, AppState? cachedState) async {
     if (paths.isEmpty) return;
     final state = cachedState ?? context.read<AppState>();
     setState(() => _importing = true);
     try {
-      final booksDir = await state.getBooksDirectory();
       var imported = 0;
-      for (final src in paths) {
-        final fmt = FormatDetector.detectFormat(src);
-        if (fmt == null) continue;
-        var name = p.basename(src);
-        var dest = p.join(booksDir.path, name);
-        var n = 1;
-        while (File(dest).existsSync()) {
-          final ext = p.extension(name);
-          final base = p.basenameWithoutExtension(name);
-          dest = p.join(booksDir.path, '$base($n)$ext');
-          n++;
-        }
-        try {
-          await File(src).copy(dest);
+      var skipped = 0;
+      for (final path in paths) {
+        final book = await state.registerExternalFile(path);
+        if (book == null) {
+          skipped++;
+        } else {
           imported++;
-        } catch (_) {}
+        }
       }
+
       if (mounted) {
+        final message = skipped == 0
+            ? '已登记 $imported 个文件（不复制原文件）'
+            : '已登记 $imported 个文件，跳过 $skipped 个不支持/无法访问的文件';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已导入 $imported 个文件')),
+          SnackBar(content: Text(message)),
         );
       }
-      if (imported > 0) {
-        await state.scan(dirs: [booksDir.path]);
+      if (imported > 0 && mounted) {
+        setState(() {});
       }
     } finally {
       if (mounted) setState(() => _importing = false);
     }
   }
+
 }
 
 class _SectionTitle extends StatelessWidget {
