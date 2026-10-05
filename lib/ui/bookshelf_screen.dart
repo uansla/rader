@@ -148,7 +148,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                     icon: const Icon(Icons.delete_sweep_outlined),
                     tooltip: '清理记录',
                     onPressed: () => _confirmSelectedAction(
-                      context,
                       state,
                       cleanup: true,
                     ),
@@ -335,8 +334,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(cleanup
-            ? '清理选中的 ${count} 条记录？'
-            : '删除选中的 ${count} 条记录？'),
+            ? '清理选中的 $count 条记录？'
+            : '删除选中的 $count 条记录？'),
         content: Text(
           cleanup
               ? '只清理 Reader 中的导入/扫描记录，不删除硬盘、U盘、存储卡上的原文件。清理后也不会被自动扫描重新加入。'
@@ -369,8 +368,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       SnackBar(
         content: Text(
           cleanup
-              ? '已清理 ${count} 条记录'
-              : '已删除 ${count} 条记录',
+              ? '已清理 $count 条记录'
+              : '已删除 $count 条记录',
         ),
       ),
     );
@@ -889,7 +888,7 @@ class _BookCell extends StatelessWidget {
   }
 
   static String _fmtMinutes(int m) {
-    if (m < 60) return '${m}分';
+    if (m < 60) return '$m分';
     return '${(m / 60).floor()}时${m % 60}分';
   }
 
