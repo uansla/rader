@@ -296,18 +296,27 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<void> deleteBook(Book b) async {
-    await bookRepo.delete(b.id!);
+  /// 删除书架记录，但以后扫描时允许再次加入。
+  Future<void> removeBooks(Iterable<Book> selected) async {
+    final ids=selected.where((b)=>b.id!=null).map((b)=>b.id!);
+    await bookRepo.deleteMany(ids,hideFromRescan:false);
     books=await bookRepo.getAll();
     notifyListeners();
   }
 
-  Future<void> deleteBooks(Iterable<Book> selected) async {
+  /// 清理导入/扫描记录，并禁止下一次扫描自动重新加入。
+  Future<void> cleanupBooks(Iterable<Book> selected) async {
     final ids=selected.where((b)=>b.id!=null).map((b)=>b.id!);
-    await bookRepo.deleteMany(ids);
+    await bookRepo.deleteMany(ids,hideFromRescan:true);
     books=await bookRepo.getAll();
     notifyListeners();
   }
+
+  /// 兼容旧调用：旧版删除接口按“清理记录”处理。
+  Future<void> deleteBook(Book b) async => cleanupBooks([b]);
+
+  Future<void> deleteBooks(Iterable<Book> selected) async =>
+      cleanupBooks(selected);
 
   Future<void> updateSettings(ReaderSettings s) async {
     settings=s;

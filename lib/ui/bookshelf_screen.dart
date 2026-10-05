@@ -139,7 +139,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                     icon: const Icon(Icons.delete_outline),
                     tooltip: '删除记录',
                     onPressed: () => _confirmSelectedAction(
-                      context,
                       state,
                       cleanup: false,
                     ),
@@ -326,7 +325,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   }
 
   Future<void> _confirmSelectedAction(
-    BuildContext context,
     AppState state, {
     required bool cleanup,
   }) async {
@@ -857,7 +855,7 @@ class _BookCell extends StatelessWidget {
                           const Icon(Icons.timer, size: 10, color: Colors.white),
                           const SizedBox(width: 2),
                           Text(
-                            ${_fmtMinutes(book.readMinutes)},
+                            _fmtMinutes(book.readMinutes),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 9,
