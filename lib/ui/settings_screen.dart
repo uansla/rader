@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -165,6 +167,60 @@ class SettingsScreen extends StatelessWidget {
               style: TextStyle(fontSize: 12),
             ),
           ),
+          if (Platform.isWindows) ...[
+            const SizedBox(height: 8),
+            const _Header('Windows 右键打开'),
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.ads_click_outlined),
+                    title: const Text('安装「用 Reader 打开」右键菜单'),
+                    subtitle: const Text(
+                      '在 TXT、EPUB、MOBI、AZW3、HTML、MD、FB2、ODT、DOCX 及常见音频文件上右键即可打开 Reader。',
+                    ),
+                    onTap: () async {
+                      final ok = await state.installWindowsContextMenu();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok ? '右键菜单已安装' : '安装失败，请确认这是 Windows 桌面版',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline),
+                    title: const Text('卸载「用 Reader 打开」右键菜单'),
+                    subtitle: const Text('只删除 Reader 注册的右键菜单，不删除 Reader 或书籍。'),
+                    onTap: () async {
+                      final ok = await state.uninstallWindowsContextMenu();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok ? '右键菜单已卸载' : '卸载失败，请确认这是 Windows 桌面版',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+              child: Text(
+                'Reader 首次运行时也会自动安装右键菜单，不需要管理员权限。若以后把 Reader 整个文件夹移动到其他位置，再运行一次 Reader 或重新点击安装即可更新路径。',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           const _Header('统计与同步'),
           Card(

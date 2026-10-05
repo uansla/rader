@@ -81,7 +81,14 @@ jobs:
             "",
             "运行：双击 reader.exe",
             "",
-            "本版本包含：",
+            "Windows 右键打开：",
+            "1. 首次运行 reader.exe 会自动安装右键菜单。",
+            "2. 也可以运行 Install-Reader-Right-Click.cmd 手动安装。",
+            "3. 在支持的 TXT / EPUB / MOBI / AZW3 / HTML / MD / FB2 / ODT / DOCX / 音频文件上右键，选择“用 Reader 打开”。",
+            "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
+            "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
+            "",
+            "本版本包含："
             "- Windows x64 Flutter Release 程序",
             "- 离线中文 Piper Huayan Medium TTS 模型",
             "- reader_tts.dll / onnxruntime.dll / espeak-ng.dll",
@@ -100,7 +107,7 @@ jobs:
             throw "Windows release directory was not generated: $releaseDir"
           }
 
-          $exe = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File | Select-Object -First 1
+          $exe = Get-ChildItem -Path $releaseDir -Filter "reader.exe" -File | Select-Object -First 1
           if ($null -eq $exe) {
             throw "No Windows executable was found in $releaseDir"
           }
@@ -125,11 +132,78 @@ jobs:
           (Get-ChildItem -Path $releaseDir -Recurse -File |
             Measure-Object -Property Length -Sum).Sum
 
+      - name: Verify right-click registration command
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $exe = Join-Path $releaseDir "reader.exe"
+
+          & $exe --install-context-menu
+          if ($LASTEXITCODE -ne 0) {
+            throw "reader.exe --install-context-menu failed with exit code $LASTEXITCODE"
+          }
+
+          $regKey = "HKCU:\Software\Classes\SystemFileAssociations\.epub\shell\Reader"
+          if (-not (Test-Path $regKey)) {
+            throw "Reader context-menu registry key was not created: $regKey"
+          }
+
+          $commandKey = "$regKey\command"
+          if (-not (Test-Path $commandKey)) {
+            throw "Reader context-menu command key was not created: $commandKey"
+          }
+
+          $command = (Get-ItemProperty -Path $commandKey -Name '(default)').'(default)'
+          Write-Host "Registered command: $command"
+
+          & $exe --uninstall-context-menu
+          if ($LASTEXITCODE -ne 0) {
+            throw "reader.exe --uninstall-context-menu failed with exit code $LASTEXITCODE"
+          }
+
+          if (Test-Path $regKey) {
+            throw "Reader context-menu registry key was not removed: $regKey"
+          }
+
+      - name: Create right-click install scripts
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+
+          $installScript = @'
+          @echo off
+          setlocal
+          "%~dp0reader.exe" --install-context-menu
+          if errorlevel 1 (
+            echo Reader right-click menu installation failed.
+            pause
+            exit /b 1
+          )
+          echo Reader right-click menu installed successfully.
+          echo You can now right-click supported book/audio files and choose "用 Reader 打开".
+          pause
+          '@
+          Set-Content -Path (Join-Path $releaseDir "Install-Reader-Right-Click.cmd") -Value $installScript -Encoding UTF8
+
+          $uninstallScript = @'
+          @echo off
+          setlocal
+          "%~dp0reader.exe" --uninstall-context-menu
+          if errorlevel 1 (
+            echo Reader right-click menu uninstall failed.
+            pause
+            exit /b 1
+          )
+          echo Reader right-click menu uninstalled successfully.
+          pause
+          '@
+          Set-Content -Path (Join-Path $releaseDir "Uninstall-Reader-Right-Click.cmd") -Value $uninstallScript -Encoding UTF8
+
       - name: Package Windows x64
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.3.0_Windows_x64.zip"
+          $zip = "Reader_v1.3.1_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -149,9 +223,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.3.0_Windows_x64.zip"
-          $tag = "v1.3.0-windows-${{ github.run_number }}"
-          $title = "Reader v1.3.0 Windows x64 测试版 #${{ github.run_number }}"
+          $zip = "Reader_v1.3.1_Windows_x64.zip"
+          $tag = "v1.3.1-windows-${{ github.run_number }}"
+          $title = "Reader v1.3.1 Windows x64 测试版 #${{ github.run_number }}"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"
@@ -159,5 +233,5 @@ jobs:
 
           gh release create $tag $zip `
             --title $title `
-            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Huayan Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
+            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择“用 Reader 打开”。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Huayan Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
             --target $env:GITHUB_SHA
