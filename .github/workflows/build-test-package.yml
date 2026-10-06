@@ -76,12 +76,16 @@ jobs:
             throw "Unexpected Chaowen ONNX model size: $modelSize bytes"
           }
 
-          $hash = [string](Get-FileHash -Path $modelPath -Algorithm SHA256).Hash.Trim().ToLowerInvariant()
-          if ($hash.Length -ne 64 -or $hash -notmatch '^[0-9a-f]{64}          $configPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx.json"
+          $hash = (Get-FileHash -Path $modelPath -Algorithm SHA256).Hash
+          Write-Host "Chaowen ONNX SHA256: $hash"
+
+          $configPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx.json"
           $configUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/10eb5c756ae21b759c8344d54aef86f9399ae92d/zh/zh_CN/chaowen/medium/zh_CN-chaowen-medium.onnx.json?download=true"
           Invoke-WebRequest -Uri $configUrl -OutFile $configPath -UseBasicParsing
-          if ((Get-Item $configPath).Length -ne 2927) {
-            throw "Unexpected Chaowen config size: $((Get-Item $configPath).Length) bytes"
+
+          $configSize = (Get-Item $configPath).Length
+          if ($configSize -ne 2927) {
+            throw "Unexpected Chaowen config size: $configSize bytes"
           }
 
           $testNote = @(
@@ -95,9 +99,8 @@ jobs:
             "3. 在支持的 TXT / EPUB / MOBI / AZW3 / HTML / MD / FB2 / ODT / DOCX / 音频文件上右键，选择用 Reader 打开。",
             "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
             "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
-
             "",
-            "本版本包含："
+            "本版本包含：",
             "- Windows x64 Flutter Release 程序",
             "- 离线中文 Piper Chaowen Medium TTS 模型",
             "- reader_tts.dll / onnxruntime.dll / espeak-ng.dll",
