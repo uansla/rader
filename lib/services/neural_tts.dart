@@ -6,7 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
-/// Piper 神经语音（华研女声），在后台 isolate 里做 ONNX 推理，
+/// Piper 神经语音（超文 Chaowen），在后台 isolate 里做 ONNX 推理，
 /// 避免合成耗时阻塞 UI。
 ///
 /// 优先级：系统引擎 > 神经语音 > espeak 兜底。

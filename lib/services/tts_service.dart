@@ -13,7 +13,7 @@ import 'neural_tts.dart';
 
 /// 朗读服务，优先级：
 /// 1. 系统语音引擎（flutter_tts，音质好、多音色）
-/// 2. Piper 神经语音（华研女声，内嵌离线）
+/// 2. Piper 神经语音（超文 Chaowen，Windows 离线）
 /// 3. espeak-ng 兜底（保证能读）
 class TtsService {
   final FlutterTts _tts = FlutterTts();
@@ -233,6 +233,7 @@ class TtsService {
         final support = await getApplicationSupportDirectory();
         final dest = p.join(support.path, 'espeak-ng-data');
         await _copyNativeAssetDir('espeak-ng-data', dest);
+        // Android 当前暂保留原有 Huayan 资源，Windows 独立版使用 Chaowen。
         final modelPath = await _extractAssetFile(
             'assets/zh_CN-huayan-medium.onnx', 'zh_CN-huayan-medium.onnx',
             support.path);
@@ -249,8 +250,8 @@ class TtsService {
       if (Platform.isWindows) {
         final dir = File(Platform.resolvedExecutable).parent.path;
         final dataPath = p.join(dir, 'espeak-ng-data');
-        final modelPath = p.join(dir, 'zh_CN-huayan-medium.onnx');
-        final modelConfigPath = p.join(dir, 'zh_CN-huayan-medium.onnx.json');
+        final modelPath = p.join(dir, 'zh_CN-chaowen-medium.onnx');
+        final modelConfigPath = p.join(dir, 'zh_CN-chaowen-medium.onnx.json');
         if (Directory(dataPath).existsSync() &&
             File(modelPath).existsSync() &&
             File(modelConfigPath).existsSync()) {

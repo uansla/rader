@@ -11,7 +11,7 @@
 - **📚 多格式书架**：TXT / EPUB / MOBI / HTML / MD 文本书 + MP3 / M4A / FLAC 有声书
 - **🔊 离线朗读（核心）**：三级引擎自动回退
   1. **系统语音引擎**（有则优先，音质好、多音色，如手机的 Google TTS）
-  2. **内嵌神经语音「华研」**（Piper + ONNX，离线中文女声，Android/Windows 内置）
+  2. **内嵌神经语音「超文 Chaowen」**（Piper + ONNX，离线中文女声，Android/Windows 内置）
   3. **espeak-ng 兜底**（任何设备保证能读）
 - **📖 朗读体验**：跟随朗读自动滚动、读完一章自动翻下一章、点击即停、退出即停
 - **📶 局域网传书**：设备间自动发现 + HTTP 直传，无需数据线
@@ -31,7 +31,7 @@
 | Android | `Reader_vX.Y.Z.apk` | 直接安装（arm64，约 141MB，含离线语音模型） |
 | Windows | `Reader_Windows.zip` | 解压即用，双击 `reader.exe` |
 
-> Windows 首次朗读会自动加载内置离线语音（华研），无需额外配置。
+> Windows 首次朗读会自动加载内置离线语音（超文 Chaowen），无需额外配置。
 > Android 需要 Android 10+（API 29+）。
 
 📚 完整文档见 [`docs/`](docs/README.md)（同步 GitHub Wiki）。
@@ -66,13 +66,13 @@
 ```
 系统引擎（Google TTS / SAPI 等，多音色）
         ↓ 无中文语音时
-内嵌神经语音「华研」（Piper huayan，离线女声）
+内嵌神经语音「超文 Chaowen」（Piper huayan，离线女声）
         ↓ 模型/库加载失败时
 espeak-ng（离线机器人腔兜底）
 ```
 
 - 手机（有 Google TTS）：优先使用系统引擎，多音色可选。
-- 平板 / Windows（无可用系统中文引擎）：自动使用**内嵌华研神经语音**（完全离线，约 60MB 模型随包内置）。
+- 平板 / Windows（无可用系统中文引擎）：自动使用**内嵌超文 Chaowen 神经语音**（完全离线，约 63MB 模型随包内置）。
 
 ---
 
@@ -130,7 +130,7 @@ assets/                        # 华研语音模型（ONNX）
 
 本仓库代码遵循 MIT License（见 `LICENSE`）。
 
-> 注意：内置的华研语音模型（`zh_CN-huayan-medium.onnx`）遵循 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)（仅限非商业使用），请遵守其授权条款。
+> 注意：内置的华研语音模型（`zh_CN-chaowen-medium.onnx`）遵循 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)（仅限非商业使用），请遵守其授权条款。
 
 ---
 
@@ -141,3 +141,6 @@ assets/                        # 华研语音模型（ONNX）
 - [Piper TTS](https://github.com/rhasspy/piper)
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime)
 - [just_audio](https://pub.dev/packages/just_audio) / [flutter_tts](https://pub.dev/packages/flutter_tts)
+
+
+> Windows 测试版当前使用 Piper「超文 Chaowen Medium」（约 63.2MB，22.05kHz）。Android 端现阶段仍保留原有模型资源，后续 Matcha Icefall zh-Baker 测试确定后再统一调整。

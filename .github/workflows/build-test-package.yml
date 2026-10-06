@@ -49,7 +49,7 @@ jobs:
             throw "Native TTS directory was not found: $nativeDir"
           }
 
-          foreach ($file in @("espeak-ng.dll", "onnxruntime.dll", "reader_tts.dll", "zh_CN-huayan-medium.onnx.json")) {
+          foreach ($file in @("espeak-ng.dll", "onnxruntime.dll", "reader_tts.dll")) {
             $src = Join-Path $nativeDir $file
             if (-not (Test-Path $src)) {
               throw "Required TTS file is missing: $src"
@@ -67,13 +67,26 @@ jobs:
           }
           Copy-Item $dataSrc $dataDst -Recurse -Force
 
-          $modelUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx?download=true"
-          $modelPath = Join-Path $releaseDir "zh_CN-huayan-medium.onnx"
+          $modelUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/chaowen/medium/zh_CN-chaowen-medium.onnx?download=true"
+          $modelPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx"
           Invoke-WebRequest -Uri $modelUrl -OutFile $modelPath -UseBasicParsing
 
           $modelSize = (Get-Item $modelPath).Length
-          if ($modelSize -lt 50000000) {
-            throw "Piper ONNX model is incomplete: $modelSize bytes"
+          if ($modelSize -ne 63221984) {
+            throw "Unexpected Chaowen ONNX model size: $modelSize bytes"
+          }
+
+          $hash = (Get-FileHash -Path $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = "820d64ac16048fbcf38dd0823d37fabf5e0c2bd71b01ca5a50f553fac19e746"
+          if ($hash -ne $expectedHash) {
+            throw "Chaowen ONNX SHA256 mismatch: $hash"
+          }
+
+          $configPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx.json"
+          $configUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/chaowen/medium/zh_CN-chaowen-medium.onnx.json?download=true"
+          Invoke-WebRequest -Uri $configUrl -OutFile $configPath -UseBasicParsing
+          if ((Get-Item $configPath).Length -ne 2927) {
+            throw "Unexpected Chaowen config size: $((Get-Item $configPath).Length) bytes"
           }
 
           $testNote = @(
@@ -87,10 +100,11 @@ jobs:
             "3. 在支持的 TXT / EPUB / MOBI / AZW3 / HTML / MD / FB2 / ODT / DOCX / 音频文件上右键，选择用 Reader 打开。",
             "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
             "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
+
             "",
             "本版本包含："
             "- Windows x64 Flutter Release 程序",
-            "- 离线中文 Piper Huayan Medium TTS 模型",
+            "- 离线中文 Piper Chaowen Medium TTS 模型",
             "- reader_tts.dll / onnxruntime.dll / espeak-ng.dll",
             "- espeak-ng-data",
             "- ODT / DOCX 阅读支持（以程序实际功能为准）",
@@ -118,8 +132,8 @@ jobs:
             "reader_tts.dll",
             "onnxruntime.dll",
             "espeak-ng.dll",
-            "zh_CN-huayan-medium.onnx",
-            "zh_CN-huayan-medium.onnx.json",
+            "zh_CN-chaowen-medium.onnx",
+            "zh_CN-chaowen-medium.onnx.json",
             "espeak-ng-data"
           )
           foreach ($item in $required) {
@@ -207,7 +221,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.3.2_Windows_x64.zip"
+          $zip = "Reader_v1.3.3_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -227,9 +241,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.3.2_Windows_x64.zip"
-          $tag = "v1.3.2-windows-${{ github.run_number }}"
-          $title = "Reader v1.3.2 Windows x64 测试版 #${{ github.run_number }}"
+          $zip = "Reader_v1.3.3_Windows_x64.zip"
+          $tag = "v1.3.3-windows-${{ github.run_number }}"
+          $title = "Reader v1.3.3 Windows x64 测试版 #${{ github.run_number }}"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"
@@ -237,5 +251,5 @@ jobs:
 
           gh release create $tag $zip `
             --title $title `
-            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Huayan Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
+            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Chaowen Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
             --target $env:GITHUB_SHA
