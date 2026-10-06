@@ -76,10 +76,10 @@ jobs:
             throw "Unexpected Chaowen ONNX model size: $modelSize bytes"
           }
 
-          $hash = (Get-FileHash -Path $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expectedHash = "820d64ac16048fbcf38dd0823d37fabf5e0c2bd71b01ca5a50f553fac19e746"
-          if ($hash -ne $expectedHash) {
-            throw "Chaowen ONNX SHA256 mismatch: $hash"
+          $hash = (Get-FileHash -Path $modelPath -Algorithm SHA256).Hash.Trim().ToLowerInvariant()
+          $expectedHash = "820d64ac16048fbcf38dd0823d37fabf5e0c2bd71b01ca5a50f553fac19e746".Trim().ToLowerInvariant()
+          if ($hash -cne $expectedHash) {
+            throw "Chaowen ONNX SHA256 mismatch: actual=$hash expected=$expectedHash"
           }
 
           $configPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx.json"
