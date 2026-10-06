@@ -39,7 +39,7 @@ jobs:
       - name: Build Windows x64
         run: flutter build windows --release
 
-      - name: Add offline TTS runtime files
+      - name: Add offline Matcha TTS runtime and models
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
@@ -49,13 +49,11 @@ jobs:
             throw "Native TTS directory was not found: $nativeDir"
           }
 
-          foreach ($file in @("espeak-ng.dll", "onnxruntime.dll", "reader_tts.dll")) {
-            $src = Join-Path $nativeDir $file
-            if (-not (Test-Path $src)) {
-              throw "Required TTS file is missing: $src"
-            }
-            Copy-Item $src $releaseDir -Force
+          $espeakDll = Join-Path $nativeDir "espeak-ng.dll"
+          if (-not (Test-Path $espeakDll)) {
+            throw "Required espeak-ng.dll is missing: $espeakDll"
           }
+          Copy-Item $espeakDll $releaseDir -Force
 
           $dataSrc = Join-Path $nativeDir "espeak-ng-data"
           $dataDst = Join-Path $releaseDir "espeak-ng-data"
@@ -67,29 +65,71 @@ jobs:
           }
           Copy-Item $dataSrc $dataDst -Recurse -Force
 
-          $modelUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/10eb5c756ae21b759c8344d54aef86f9399ae92d/zh/zh_CN/chaowen/medium/zh_CN-chaowen-medium.onnx?download=true"
-          $modelPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx"
-          Invoke-WebRequest -Uri $modelUrl -OutFile $modelPath -UseBasicParsing
+          $matchaArchive = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker.tar.bz2"
+          $matchaRoot = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker"
 
-          $modelSize = (Get-Item $modelPath).Length
-          if ($modelSize -ne 63221984) {
-            throw "Unexpected Chaowen ONNX model size: $modelSize bytes"
+          if (Test-Path $matchaArchive) {
+            Remove-Item $matchaArchive -Force
+          }
+          if (Test-Path $matchaRoot) {
+            Remove-Item $matchaRoot -Recurse -Force
           }
 
-          $hash = (Get-FileHash -Path $modelPath -Algorithm SHA256).Hash
-          Write-Host "Chaowen ONNX SHA256: $hash"
-
-          $configPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx.json"
-          $configUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/10eb5c756ae21b759c8344d54aef86f9399ae92d/zh/zh_CN/chaowen/medium/zh_CN-chaowen-medium.onnx.json?download=true"
-          Invoke-WebRequest -Uri $configUrl -OutFile $configPath -UseBasicParsing
-
-          $configSize = (Get-Item $configPath).Length
-          if ($configSize -ne 2699) {
-            throw "Unexpected Chaowen config size: $configSize bytes"
+          $matchaUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-zh-baker.tar.bz2"
+          Invoke-WebRequest -Uri $matchaUrl -OutFile $matchaArchive -UseBasicParsing
+          if (-not (Test-Path $matchaArchive)) {
+            throw "Matcha model archive was not downloaded."
           }
+
+          tar.exe -xjf $matchaArchive -C $env:RUNNER_TEMP
+          if (-not (Test-Path $matchaRoot)) {
+            throw "Matcha model directory was not extracted: $matchaRoot"
+          }
+
+          $releaseMatcha = Join-Path $releaseDir "matcha-icefall-zh-baker"
+          if (Test-Path $releaseMatcha) {
+            Remove-Item $releaseMatcha -Recurse -Force
+          }
+          Copy-Item $matchaRoot $releaseMatcha -Recurse -Force
+
+          $vocosUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx"
+          $vocosPath = Join-Path $releaseDir "vocos-22khz-univ.onnx"
+          if (Test-Path $vocosPath) {
+            Remove-Item $vocosPath -Force
+          }
+          Invoke-WebRequest -Uri $vocosUrl -OutFile $vocosPath -UseBasicParsing
+
+          $acousticPath = Join-Path $releaseMatcha "model-steps-3.onnx"
+          $acousticSize = (Get-Item $acousticPath).Length
+          $vocosSize = (Get-Item $vocosPath).Length
+          if ($acousticSize -lt 70000000) {
+            throw "Matcha acoustic model is incomplete: $acousticSize bytes"
+          }
+          if ($vocosSize -lt 50000000) {
+            throw "Vocos model is incomplete: $vocosSize bytes"
+          }
+
+          foreach ($file in @(
+            "model-steps-3.onnx",
+            "lexicon.txt",
+            "tokens.txt",
+            "phone.fst",
+            "date.fst",
+            "number.fst"
+          )) {
+            if (-not (Test-Path (Join-Path $releaseMatcha $file))) {
+              throw "Required Matcha file is missing: $file"
+            }
+          }
+
+          Write-Host "Matcha acoustic model size: $acousticSize bytes"
+          Write-Host "Vocos model size: $vocosSize bytes"
 
           $testNote = @(
             "Reader Windows x64 测试版",
+            "",
+            "本版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音。",
+            "Matcha 声学模型 + Vocos 声码器约 123 MB。",
             "",
             "运行：双击 reader.exe",
             "",
@@ -100,12 +140,7 @@ jobs:
             "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
             "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
             "",
-            "本版本包含：",
-            "- Windows x64 Flutter Release 程序",
-            "- 离线中文 Piper Chaowen Medium TTS 模型",
-            "- reader_tts.dll / onnxruntime.dll / espeak-ng.dll",
-            "- espeak-ng-data",
-            "- ODT / DOCX 阅读支持（以程序实际功能为准）",
+            "Matcha 模型文件位于 matcha-icefall-zh-baker 目录，Vocos 位于 Release 根目录。",
             "",
             "If Windows SmartScreen appears, choose More info and run. This is an unsigned test build."
           ) -join [Environment]::NewLine
@@ -126,11 +161,10 @@ jobs:
 
           $required = @(
             "reader.exe",
-            "reader_tts.dll",
+            "sherpa-onnx-c-api.dll",
             "onnxruntime.dll",
             "espeak-ng.dll",
-            "zh_CN-chaowen-medium.onnx",
-            "zh_CN-chaowen-medium.onnx.json",
+            "vocos-22khz-univ.onnx",
             "espeak-ng-data"
           )
 
@@ -140,8 +174,33 @@ jobs:
             }
           }
 
+          $matchaDir = Join-Path $releaseDir "matcha-icefall-zh-baker"
+          foreach ($item in @(
+            "model-steps-3.onnx",
+            "lexicon.txt",
+            "tokens.txt",
+            "phone.fst",
+            "date.fst",
+            "number.fst"
+          )) {
+            if (-not (Test-Path (Join-Path $matchaDir $item))) {
+              throw "Required Matcha release item is missing: $item"
+            }
+          }
+
           Write-Host "Windows executable: $($exe.FullName)"
-          Write-Host "Windows release directory verified."
+          Write-Host "Windows Matcha release files verified."
+
+      - name: Verify Matcha TTS synthesis
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $exe = Join-Path $releaseDir "reader.exe"
+
+          $selfTest = Start-Process -FilePath $exe -ArgumentList "--tts-self-test" -Wait -PassThru -WindowStyle Hidden
+          if ($selfTest.ExitCode -ne 0) {
+            throw "Matcha TTS self-test failed with exit code $($selfTest.ExitCode)"
+          }
 
       - name: Verify right-click registration command
         shell: pwsh
@@ -214,7 +273,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.3.3_Windows_x64.zip"
+          $zip = "Reader_v1.3.4_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -233,10 +292,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.3.3_Windows_x64.zip"
-          $tag = "v1.3.3-windows-${{ github.run_number }}"
-          $title = "Reader v1.3.3 Windows x64 测试版 #${{ github.run_number }}"
-          $notes = "Reader Windows x64 测试版。此版本使用 Piper Chaowen Medium 中文离线语音模型。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Chaowen Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
+          $zip = "Reader_v1.3.4_Windows_x64.zip"
+          $tag = "v1.3.4-windows-${{ github.run_number }}"
+          $title = "Reader v1.3.4 Windows x64 测试版 #${{ github.run_number }}"
+          $notes = "Reader Windows x64 测试版。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Matcha Icefall zh-Baker 声学模型、Vocos 声码器及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"

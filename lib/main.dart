@@ -1,12 +1,40 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import 'app.dart';
 import 'services/windows_context_menu_service.dart';
+import 'services/matcha_tts.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows && args.contains('--tts-self-test')) {
+    final base = File(Platform.resolvedExecutable).parent.path;
+    final matchaDir = p.join(base, 'matcha-icefall-zh-baker');
+    final tts = MatchaTts();
+    try {
+      final ok = await tts.init(
+        acousticModelPath: p.join(matchaDir, 'model-steps-3.onnx'),
+        vocoderPath: p.join(base, 'vocos-22khz-univ.onnx'),
+        lexiconPath: p.join(matchaDir, 'lexicon.txt'),
+        tokensPath: p.join(matchaDir, 'tokens.txt'),
+        ruleFsts: [
+          p.join(matchaDir, 'phone.fst'),
+          p.join(matchaDir, 'date.fst'),
+          p.join(matchaDir, 'number.fst'),
+        ].join(','),
+        numThreads: 2,
+      );
+      if (!ok) exit(2);
+      exit(await tts.selfTest() ? 0 : 3);
+    } catch (_) {
+      exit(4);
+    } finally {
+      tts.dispose();
+    }
+  }
 
   if (Platform.isWindows && args.contains('--install-context-menu')) {
     exit(await WindowsContextMenuService.install() ? 0 : 1);

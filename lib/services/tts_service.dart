@@ -10,19 +10,22 @@ import 'package:path_provider/path_provider.dart';
 
 import 'embedded_tts.dart';
 import 'neural_tts.dart';
+import 'matcha_tts.dart';
 
 /// 朗读服务，优先级：
 /// 1. 系统语音引擎（flutter_tts，音质好、多音色）
-/// 2. Piper 神经语音（超文 Chaowen，Windows 离线）
+/// 2. Matcha Icefall zh-Baker（Windows 离线）/ Piper（Android 离线）
 /// 3. espeak-ng 兜底（保证能读）
 class TtsService {
   final FlutterTts _tts = FlutterTts();
   final AudioPlayer _fallbackPlayer = AudioPlayer();
   EmbeddedTts? _embedded;
   NeuralTts? _neural;
+  MatchaTts? _matcha;
   bool _ready = false;
   bool _useSystem = false;
   bool _neuralReady = false;
+  bool _matchaReady = false;
   bool _embeddedReady = false;
   String? _dataPath;
 
@@ -53,17 +56,34 @@ class TtsService {
       });
     }
     if (!_useSystem) {
-      _neural = NeuralTts();
-      final paths = await _resolvePaths();
-      if (paths != null) {
-        _dataPath = paths.dataPath;
-        _neuralReady = await _neural!.init(
-          modelPath: paths.modelPath,
-          configPath: paths.modelConfigPath,
-          dataPath: paths.dataPath,
-        );
+      if (Platform.isWindows) {
+        _matcha = MatchaTts();
+        final paths = await _resolveMatchaPaths();
+        if (paths != null) {
+          _dataPath = paths.dataPath;
+          _matchaReady = await _matcha!.init(
+            acousticModelPath: paths.acousticModelPath,
+            vocoderPath: paths.vocoderPath,
+            lexiconPath: paths.lexiconPath,
+            tokensPath: paths.tokensPath,
+            ruleFsts: paths.ruleFsts,
+            numThreads: 2,
+          );
+        }
+      } else {
+        _neural = NeuralTts();
+        final paths = await _resolvePiperPaths();
+        if (paths != null) {
+          _dataPath = paths.dataPath;
+          _neuralReady = await _neural!.init(
+            modelPath: paths.modelPath,
+            configPath: paths.modelConfigPath,
+            dataPath: paths.dataPath,
+          );
+        }
       }
-      if (!_neuralReady) {
+
+      if (!_matchaReady && !_neuralReady) {
         _embedded = EmbeddedTts.tryLoad();
         if (_embedded != null && _dataPath != null) {
           _embeddedReady = _embedded!.init(_dataPath!);
@@ -76,7 +96,7 @@ class TtsService {
   /// 是否有任一可用引擎。
   Future<bool> isAvailable() async {
     await init();
-    return _useSystem || _neuralReady || _embeddedReady;
+    return _useSystem || _matchaReady || _neuralReady || _embeddedReady;
   }
 
   /// 系统是否有可用的中文语音引擎。
@@ -109,7 +129,7 @@ class TtsService {
         return false;
       }
     }
-    if (_neuralReady) {
+    if (_matchaReady || _neuralReady) {
       _startNeural(text);
       return true;
     }
@@ -150,12 +170,22 @@ class TtsService {
     }
   }
 
+  Future<Uint8List> _synthesizeNeural(String text) async {
+    if (_matchaReady) {
+      return _matcha!.synthesize(text);
+    }
+    if (_neuralReady) {
+      return _neural!.synthesize(text);
+    }
+    return Uint8List(0);
+  }
+
   Future<void> _runNeural(String text, int token, Completer<void> cancel) async {
     final sentences = _splitSentences(text);
     var runningOffset = 0;
     for (final s in sentences) {
       if (token != _neuralToken) break;
-      final wav = await _neural!.synthesize(s);
+      final wav = await _synthesizeNeural(s);
       if (wav.isEmpty) continue;
       if (token != _neuralToken) break;
       final duration = _wavDuration(wav);
@@ -226,20 +256,26 @@ class TtsService {
 
   // ===== 路径解析 =====
 
-  Future<({String dataPath, String modelPath, String modelConfigPath})?>
-      _resolvePaths() async {
+  Future<({
+    String dataPath,
+    String modelPath,
+    String modelConfigPath,
+  })?> _resolvePiperPaths() async {
     try {
       if (Platform.isAndroid) {
         final support = await getApplicationSupportDirectory();
         final dest = p.join(support.path, 'espeak-ng-data');
         await _copyNativeAssetDir('espeak-ng-data', dest);
-        // Android 当前暂保留原有 Huayan 资源，Windows 独立版使用 Chaowen。
         final modelPath = await _extractAssetFile(
-            'assets/zh_CN-huayan-medium.onnx', 'zh_CN-huayan-medium.onnx',
-            support.path);
+          'assets/zh_CN-huayan-medium.onnx',
+          'zh_CN-huayan-medium.onnx',
+          support.path,
+        );
         final modelConfigPath = await _extractAssetFile(
-            'assets/zh_CN-huayan-medium.onnx.json',
-            'zh_CN-huayan-medium.onnx.json', support.path);
+          'assets/zh_CN-huayan-medium.onnx.json',
+          'zh_CN-huayan-medium.onnx.json',
+          support.path,
+        );
         if (modelPath == null || modelConfigPath == null) return null;
         return (
           dataPath: p.join(support.path, 'espeak-ng-data'),
@@ -247,24 +283,58 @@ class TtsService {
           modelConfigPath: modelConfigPath,
         );
       }
-      if (Platform.isWindows) {
-        final dir = File(Platform.resolvedExecutable).parent.path;
-        final dataPath = p.join(dir, 'espeak-ng-data');
-        final modelPath = p.join(dir, 'zh_CN-chaowen-medium.onnx');
-        final modelConfigPath = p.join(dir, 'zh_CN-chaowen-medium.onnx.json');
-        if (Directory(dataPath).existsSync() &&
-            File(modelPath).existsSync() &&
-            File(modelConfigPath).existsSync()) {
-          return (
-            dataPath: dataPath,
-            modelPath: modelPath,
-            modelConfigPath: modelConfigPath,
-          );
-        }
-      }
     } catch (_) {}
     return null;
   }
+
+  Future<({
+    String dataPath,
+    String acousticModelPath,
+    String vocoderPath,
+    String lexiconPath,
+    String tokensPath,
+    String ruleFsts,
+  })?> _resolveMatchaPaths() async {
+    if (!Platform.isWindows) return null;
+    try {
+      final dir = File(Platform.resolvedExecutable).parent.path;
+      final matchaDir = Directory(p.join(dir, 'matcha-icefall-zh-baker'));
+      final dataPath = p.join(dir, 'espeak-ng-data');
+      final acousticModelPath =
+          p.join(matchaDir.path, 'model-steps-3.onnx');
+      final vocoderPath = p.join(dir, 'vocos-22khz-univ.onnx');
+      final lexiconPath = p.join(matchaDir.path, 'lexicon.txt');
+      final tokensPath = p.join(matchaDir.path, 'tokens.txt');
+      final ruleFsts = [
+        p.join(matchaDir.path, 'phone.fst'),
+        p.join(matchaDir.path, 'date.fst'),
+        p.join(matchaDir.path, 'number.fst'),
+      ].join(',');
+
+      if (!Directory(dataPath).existsSync() ||
+          !File(acousticModelPath).existsSync() ||
+          !File(vocoderPath).existsSync() ||
+          !File(lexiconPath).existsSync() ||
+          !File(tokensPath).existsSync()) {
+        return null;
+      }
+      for (final fst in ruleFsts.split(',')) {
+        if (!File(fst).existsSync()) return null;
+      }
+
+      return (
+        dataPath: dataPath,
+        acousticModelPath: acousticModelPath,
+        vocoderPath: vocoderPath,
+        lexiconPath: lexiconPath,
+        tokensPath: tokensPath,
+        ruleFsts: ruleFsts,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
 
   /// 用原生通道把 assets 里的 espeak-ng-data 拷贝到应用目录（绕开 Flutter 打包器）。
   Future<int> _copyNativeAssetDir(String src, String dest) async {
@@ -332,5 +402,6 @@ class TtsService {
     } catch (_) {}
     _embedded?.dispose();
     _neural?.dispose();
+    _matcha?.dispose();
   }
 }
