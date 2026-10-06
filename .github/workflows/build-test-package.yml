@@ -84,7 +84,7 @@ jobs:
           Invoke-WebRequest -Uri $configUrl -OutFile $configPath -UseBasicParsing
 
           $configSize = (Get-Item $configPath).Length
-          if ($configSize -ne 2927) {
+          if ($configSize -ne 2699) {
             throw "Unexpected Chaowen config size: $configSize bytes"
           }
 
