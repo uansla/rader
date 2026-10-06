@@ -124,7 +124,6 @@ jobs:
             throw "No Windows executable was found in $releaseDir"
           }
 
-          Write-Host "Windows executable: $($exe.FullName)"
           $required = @(
             "reader.exe",
             "reader_tts.dll",
@@ -134,15 +133,15 @@ jobs:
             "zh_CN-chaowen-medium.onnx.json",
             "espeak-ng-data"
           )
+
           foreach ($item in $required) {
             if (-not (Test-Path (Join-Path $releaseDir $item))) {
               throw "Required release item is missing: $item"
             }
           }
 
-          Write-Host "Build directory size:"
-          (Get-ChildItem -Path $releaseDir -Recurse -File |
-            Measure-Object -Property Length -Sum).Sum
+          Write-Host "Windows executable: $($exe.FullName)"
+          Write-Host "Windows release directory verified."
 
       - name: Verify right-click registration command
         shell: pwsh
@@ -150,9 +149,7 @@ jobs:
           $releaseDir = "build/windows/x64/runner/Release"
           $exe = Join-Path $releaseDir "reader.exe"
 
-          $install = Start-Process -FilePath $exe `
-            -ArgumentList "--install-context-menu" `
-            -Wait -PassThru -WindowStyle Hidden
+          $install = Start-Process -FilePath $exe -ArgumentList "--install-context-menu" -Wait -PassThru -WindowStyle Hidden
           if ($install.ExitCode -ne 0) {
             throw "reader.exe --install-context-menu failed with exit code $($install.ExitCode)"
           }
@@ -167,12 +164,10 @@ jobs:
             throw "Reader context-menu command key was not created: $commandKey"
           }
 
-          $command = (Get-ItemProperty -Path $commandKey -Name '(default)').'(default)'
+          $command = (Get-ItemProperty -Path $commandKey -Name "(default)")."(default)"
           Write-Host "Registered command: $command"
 
-          $uninstall = Start-Process -FilePath $exe `
-            -ArgumentList "--uninstall-context-menu" `
-            -Wait -PassThru -WindowStyle Hidden
+          $uninstall = Start-Process -FilePath $exe -ArgumentList "--uninstall-context-menu" -Wait -PassThru -WindowStyle Hidden
           if ($uninstall.ExitCode -ne 0) {
             throw "reader.exe --uninstall-context-menu failed with exit code $($uninstall.ExitCode)"
           }
@@ -231,7 +226,6 @@ jobs:
             throw "Windows package was not created: $zip"
           }
 
-          Write-Host "Package created: $zip"
           Get-Item $zip | Format-List FullName, Length
 
       - name: Publish Windows x64 ZIP to GitHub Release
@@ -242,189 +236,10 @@ jobs:
           $zip = "Reader_v1.3.3_Windows_x64.zip"
           $tag = "v1.3.3-windows-${{ github.run_number }}"
           $title = "Reader v1.3.3 Windows x64 测试版 #${{ github.run_number }}"
+          $notes = "Reader Windows x64 测试版。此版本使用 Piper Chaowen Medium 中文离线语音模型。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Chaowen Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"
           }
 
-          gh release create $tag $zip `
-            --title $title `
-            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Chaowen Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
-            --target $env:GITHUB_SHA
-) {
-            throw "Invalid Chaowen ONNX SHA256 output: $hash"
-          }
-          Write-Host "Chaowen ONNX SHA256: $hash"
-          Write-Host "Chaowen model source is pinned to Piper voice commit 10eb5c756ae21b759c8344d54aef86f9399ae92d"
-
-          $configPath = Join-Path $releaseDir "zh_CN-chaowen-medium.onnx.json"
-          $configUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/chaowen/medium/zh_CN-chaowen-medium.onnx.json?download=true"
-          Invoke-WebRequest -Uri $configUrl -OutFile $configPath -UseBasicParsing
-          if ((Get-Item $configPath).Length -ne 2927) {
-            throw "Unexpected Chaowen config size: $((Get-Item $configPath).Length) bytes"
-          }
-
-          $testNote = @(
-            "Reader Windows x64 测试版",
-            "",
-            "运行：双击 reader.exe",
-            "",
-            "Windows 右键打开：",
-            "1. 首次运行 reader.exe 会自动安装右键菜单。",
-            "2. 也可以运行 Install-Reader-Right-Click.cmd 手动安装。",
-            "3. 在支持的 TXT / EPUB / MOBI / AZW3 / HTML / MD / FB2 / ODT / DOCX / 音频文件上右键，选择用 Reader 打开。",
-            "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
-            "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
-
-            "",
-            "本版本包含："
-            "- Windows x64 Flutter Release 程序",
-            "- 离线中文 Piper Chaowen Medium TTS 模型",
-            "- reader_tts.dll / onnxruntime.dll / espeak-ng.dll",
-            "- espeak-ng-data",
-            "- ODT / DOCX 阅读支持（以程序实际功能为准）",
-            "",
-            "If Windows SmartScreen appears, choose More info and run. This is an unsigned test build."
-          ) -join [Environment]::NewLine
-          Set-Content -Path (Join-Path $releaseDir "README-Windows-Test.txt") -Value $testNote -Encoding UTF8
-
-      - name: Verify Windows build
-        shell: pwsh
-        run: |
-          $releaseDir = "build/windows/x64/runner/Release"
-          if (-not (Test-Path $releaseDir)) {
-            throw "Windows release directory was not generated: $releaseDir"
-          }
-
-          $exe = Get-ChildItem -Path $releaseDir -Filter "reader.exe" -File | Select-Object -First 1
-          if ($null -eq $exe) {
-            throw "No Windows executable was found in $releaseDir"
-          }
-
-          Write-Host "Windows executable: $($exe.FullName)"
-          $required = @(
-            "reader.exe",
-            "reader_tts.dll",
-            "onnxruntime.dll",
-            "espeak-ng.dll",
-            "zh_CN-chaowen-medium.onnx",
-            "zh_CN-chaowen-medium.onnx.json",
-            "espeak-ng-data"
-          )
-          foreach ($item in $required) {
-            if (-not (Test-Path (Join-Path $releaseDir $item))) {
-              throw "Required release item is missing: $item"
-            }
-          }
-
-          Write-Host "Build directory size:"
-          (Get-ChildItem -Path $releaseDir -Recurse -File |
-            Measure-Object -Property Length -Sum).Sum
-
-      - name: Verify right-click registration command
-        shell: pwsh
-        run: |
-          $releaseDir = "build/windows/x64/runner/Release"
-          $exe = Join-Path $releaseDir "reader.exe"
-
-          $install = Start-Process -FilePath $exe `
-            -ArgumentList "--install-context-menu" `
-            -Wait -PassThru -WindowStyle Hidden
-          if ($install.ExitCode -ne 0) {
-            throw "reader.exe --install-context-menu failed with exit code $($install.ExitCode)"
-          }
-
-          $regKey = "HKCU:\Software\Classes\SystemFileAssociations\.epub\shell\Reader"
-          if (-not (Test-Path $regKey)) {
-            throw "Reader context-menu registry key was not created: $regKey"
-          }
-
-          $commandKey = "$regKey\command"
-          if (-not (Test-Path $commandKey)) {
-            throw "Reader context-menu command key was not created: $commandKey"
-          }
-
-          $command = (Get-ItemProperty -Path $commandKey -Name '(default)').'(default)'
-          Write-Host "Registered command: $command"
-
-          $uninstall = Start-Process -FilePath $exe `
-            -ArgumentList "--uninstall-context-menu" `
-            -Wait -PassThru -WindowStyle Hidden
-          if ($uninstall.ExitCode -ne 0) {
-            throw "reader.exe --uninstall-context-menu failed with exit code $($uninstall.ExitCode)"
-          }
-
-          if (Test-Path $regKey) {
-            throw "Reader context-menu registry key was not removed: $regKey"
-          }
-
-      - name: Create right-click install scripts
-        shell: pwsh
-        run: |
-          $releaseDir = "build/windows/x64/runner/Release"
-
-          $installScript = @'
-          @echo off
-          setlocal
-          "%~dp0reader.exe" --install-context-menu
-          if errorlevel 1 (
-            echo Reader right-click menu installation failed.
-            pause
-            exit /b 1
-          )
-          echo Reader right-click menu installed successfully.
-          echo You can now right-click supported book/audio files and choose "用 Reader 打开".
-          pause
-          '@
-          Set-Content -Path (Join-Path $releaseDir "Install-Reader-Right-Click.cmd") -Value $installScript -Encoding UTF8
-
-          $uninstallScript = @'
-          @echo off
-          setlocal
-          "%~dp0reader.exe" --uninstall-context-menu
-          if errorlevel 1 (
-            echo Reader right-click menu uninstall failed.
-            pause
-            exit /b 1
-          )
-          echo Reader right-click menu uninstalled successfully.
-          pause
-          '@
-          Set-Content -Path (Join-Path $releaseDir "Uninstall-Reader-Right-Click.cmd") -Value $uninstallScript -Encoding UTF8
-
-      - name: Package Windows x64
-        shell: pwsh
-        run: |
-          $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.3.3_Windows_x64.zip"
-
-          if (Test-Path $zip) {
-            Remove-Item $zip -Force
-          }
-
-          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zip -CompressionLevel Optimal
-
-          if (-not (Test-Path $zip)) {
-            throw "Windows package was not created: $zip"
-          }
-
-          Write-Host "Package created: $zip"
-          Get-Item $zip | Format-List FullName, Length
-
-      - name: Publish Windows x64 ZIP to GitHub Release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $zip = "Reader_v1.3.3_Windows_x64.zip"
-          $tag = "v1.3.3-windows-${{ github.run_number }}"
-          $title = "Reader v1.3.3 Windows x64 测试版 #${{ github.run_number }}"
-
-          if (-not (Test-Path $zip)) {
-            throw "Windows ZIP was not created: $zip"
-          }
-
-          gh release create $tag $zip `
-            --title $title `
-            --notes "Reader Windows x64 测试版。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Piper Chaowen Medium 模型及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。" `
-            --target $env:GITHUB_SHA
+          gh release create $tag $zip --title $title --notes $notes --target $env:GITHUB_SHA
