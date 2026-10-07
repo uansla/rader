@@ -20,12 +20,58 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Cache Flutter 3.18.6 SDK
+        uses: actions/cache@v4
         with:
-          flutter-version: "3.18.6"
-          channel: stable
-          cache: true
+          path: ${{ runner.temp }}/flutter-3.18.6
+          key: flutter-windows-3.18.6-x64
+
+      - name: Setup Flutter 3.18.6
+        shell: pwsh
+        run: |
+          $flutterRoot = Join-Path $env:RUNNER_TEMP "flutter-3.18.6"
+          if (-not (Test-Path (Join-Path $flutterRoot "bin\flutter.bat"))) {
+            git clone --depth 1 --branch 3.18.6 https://github.com/flutter/flutter.git $flutterRoot
+          }
+
+          if (-not (Test-Path (Join-Path $flutterRoot "bin\flutter.bat"))) {
+            throw "Flutter 3.18.6 SDK was not prepared: $flutterRoot"
+          }
+
+          $flutterBin = Join-Path $flutterRoot "bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $flutterBin
+
+          & (Join-Path $flutterBin "flutter.bat") --version
+          & (Join-Path $flutterBin "flutter.bat") precache --windows
+
+      - name: Verify legacy-compatible source
+        shell: pwsh
+        run: |
+          $flutterVersion = flutter --version
+          if ($flutterVersion -notmatch "3\.18\.6") {
+            throw "Unexpected Flutter version. Expected 3.18.6."
+          }
+
+          $manifest = Get-Content "windows/runner/runner.exe.manifest" -Raw
+          foreach ($id in @(
+            "{35138b9a-5d96-4fbd-8e2d-a2440225f93a}",
+            "{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}",
+            "{1f676c76-80e1-4239-95bb-83d0f6d0da78}",
+            "{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"
+          )) {
+            if ($manifest -notmatch [regex]::Escape($id)) {
+              throw "Windows compatibility GUID is missing: $id"
+            }
+          }
+
+          if ((Get-Content "windows/runner/main.cpp" -Raw) -match "set_impeller_switch|ImpellerSwitch") {
+            throw "Legacy Windows build must not use the newer Impeller API."
+          }
+
+          $matches = git grep -n "withValues(" -- lib
+          if ($LASTEXITCODE -eq 0) {
+            throw "Flutter 3.18 incompatible withValues API remains in lib."
+          }
 
       - name: Flutter dependencies
         run: flutter pub get
