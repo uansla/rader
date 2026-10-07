@@ -231,7 +231,7 @@ class ScrollReaderViewState extends State<ScrollReaderView> {
         spans.add(TextSpan(
           text: text.substring(highlightStart, end),
           style: widget.style.copyWith(
-            backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
+            backgroundColor: widget.palette.accent.withOpacity(0.22),
           ),
         ));
       }
