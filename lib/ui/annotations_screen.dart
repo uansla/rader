@@ -286,7 +286,7 @@ class _NoteTile extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Theme.of(context)
                               .colorScheme
-                              .surfaceContainerHighest
+                              .surfaceVariant
                               .withOpacity(0.55),
                           borderRadius: BorderRadius.circular(6),
                         ),

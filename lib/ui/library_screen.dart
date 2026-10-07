@@ -316,7 +316,7 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 6),
         Text(text, style: Theme.of(context).textTheme.titleSmall),
         const Spacer(),
-        ?trailing,
+        trailing ?? const SizedBox.shrink(),
       ],
     );
   }

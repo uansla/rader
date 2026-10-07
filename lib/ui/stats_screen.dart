@@ -42,7 +42,7 @@ class _StatsScreenState extends State<StatsScreen> {
   Color _colorFor(int minutes) {
     final scheme = Theme.of(context).colorScheme;
     if (minutes <= 0) {
-      return scheme.surfaceContainerHighest.withOpacity(0.45);
+      return scheme.surfaceVariant.withOpacity(0.45);
     }
     if (minutes < 15) return scheme.primary.withOpacity(0.3);
     if (minutes < 30) return scheme.primary.withOpacity(0.5);
