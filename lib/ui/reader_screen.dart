@@ -520,7 +520,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               // 页内亮度遮罩
               IgnorePointer(
                 child: Container(
-                  color: Colors.black.withValues(alpha: _brightness),
+                  color: Colors.black.withOpacity(_brightness),
                 ),
               ),
             ],
