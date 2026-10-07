@@ -69,6 +69,20 @@ void WriteText(const wchar_t* text) {
   CloseHandle(file);
 }
 
+void LogError(const wchar_t* message) {
+  SYSTEMTIME now = {};
+  GetLocalTime(&now);
+  wchar_t entry[2048] = {};
+  StringCchPrintfW(
+      entry, _countof(entry),
+      L"===== Reader Windows 原生错误 =====\r\n"
+      L"时间: %04u-%02u-%02u %02u:%02u:%02u.%03u\r\n"
+      L"错误: %s\r\n\r\n",
+      now.wYear, now.wMonth, now.wDay,
+      now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
+      message ? message : L"Unknown native error");
+  WriteText(entry);
+}
 LONG WINAPI UnhandledExceptionFilter(EXCEPTION_POINTERS* exception) {
   wchar_t entry[2048] = {};
   const DWORD code = exception && exception->ExceptionRecord

@@ -43,7 +43,7 @@ class TtsService {
 
   Future<void> init() async {
     if (_ready) return;
-    _useSystem = await _checkSystemTts();
+    _useSystem = !_isLegacyWindows() && await _checkSystemTts();
     if (_useSystem) {
       // 系统引擎读完一段文本后触发，用于自动翻页
       _tts.setCompletionHandler(() => onFinished?.call());
@@ -57,18 +57,28 @@ class TtsService {
     }
     if (!_useSystem) {
       if (Platform.isWindows) {
-        _matcha = MatchaTts();
-        final paths = await _resolveMatchaPaths();
-        if (paths != null) {
-          _dataPath = paths.dataPath;
-          _matchaReady = await _matcha!.init(
-            acousticModelPath: paths.acousticModelPath,
-            vocoderPath: paths.vocoderPath,
-            lexiconPath: paths.lexiconPath,
-            tokensPath: paths.tokensPath,
-            ruleFsts: paths.ruleFsts,
-            numThreads: 2,
-          );
+        if (_isLegacyWindows()) {
+          // Windows 7/8/8.1：不加载现代 Matcha/sherpa-onnx 原生链路。
+          // 使用与老系统兼容性更好的内置 eSpeak 兜底。
+          final dir = File(Platform.resolvedExecutable).parent.path;
+          final data = p.join(dir, 'espeak-ng-data');
+          if (Directory(data).existsSync()) {
+            _dataPath = data;
+          }
+        } else {
+          _matcha = MatchaTts();
+          final paths = await _resolveMatchaPaths();
+          if (paths != null) {
+            _dataPath = paths.dataPath;
+            _matchaReady = await _matcha!.init(
+              acousticModelPath: paths.acousticModelPath,
+              vocoderPath: paths.vocoderPath,
+              lexiconPath: paths.lexiconPath,
+              tokensPath: paths.tokensPath,
+              ruleFsts: paths.ruleFsts,
+              numThreads: 2,
+            );
+          }
         }
       } else {
         _neural = NeuralTts();
@@ -100,6 +110,17 @@ class TtsService {
   }
 
   /// 系统是否有可用的中文语音引擎。
+  bool _isLegacyWindows() {
+    if (!Platform.isWindows) return false;
+    try {
+      final version = Platform.operatingSystemVersion;
+      // Win7=6.1, Win8=6.2, Win8.1=6.3.
+      return RegExp(r'\bWindows\s+6\.[123]\b', caseSensitive: false)
+          .hasMatch(version);
+    } catch (_) {
+      return false;
+    }
+  }
   Future<bool> _checkSystemTts() async {
     try {
       for (var i = 0; i < 4; i++) {

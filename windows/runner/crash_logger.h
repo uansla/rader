@@ -7,6 +7,7 @@ namespace reader_crash {
 // It records only fatal native process exceptions; normal runtime events are
 // never written to the crash log.
 void InstallHandlers();
+void LogError(const wchar_t* message);
 
 }  // namespace reader_crash
 
