@@ -69,9 +69,13 @@ jobs:
           }
 
           $withValuesMatches = @(git grep -n "withValues(" -- lib 2>$null)
-          if ($withValuesMatches.Count -gt 0) {
+          $grepExit = $LASTEXITCODE
+          if ($grepExit -eq 0) {
             $withValuesMatches | ForEach-Object { Write-Host $_ }
             throw "Flutter 3.16.9 incompatible withValues API remains in lib."
+          }
+          if ($grepExit -gt 1) {
+            throw "Unable to scan source for withValues API. git grep exit code: $grepExit"
           }
 
       - name: Flutter dependencies
