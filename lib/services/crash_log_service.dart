@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
-
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
@@ -66,7 +64,7 @@ class CrashLogService {
   }) async {
     final text = error?.toString() ?? '<unknown error>';
     final stackText = stack?.toString() ?? '<no stack trace>';
-    final key = source + '\n' + text + '\n' + stackText;
+    final key = '$source\n$text\n$stackText';
     if (!_recentKeys.add(key)) return;
     if (_recentKeys.length > 32) {
       _recentKeys.remove(_recentKeys.first);
@@ -74,9 +72,9 @@ class CrashLogService {
 
     final line = StringBuffer()
       ..writeln('===== Reader 未处理错误 =====')
-      ..writeln('时间: ' + DateTime.now().toIso8601String())
-      ..writeln('来源: ' + source)
-      ..writeln('错误: ' + text)
+      ..writeln('时间: ${DateTime.now().toIso8601String()}')
+      ..writeln('来源: $source')
+      ..writeln('错误: $text')
       ..writeln('堆栈:')
       ..writeln(stackText)
       ..writeln();
