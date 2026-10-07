@@ -233,46 +233,6 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
-                  ListTile(
-                    leading: const Icon(Icons.ads_click_outlined),
-                    title: const Text('安装「用 Reader 打开」右键菜单'),
-                    subtitle: const Text(
-                      '在 TXT、EPUB、MOBI、AZW3、HTML、MD、FB2、ODT、DOCX 及常见音频文件上右键即可打开 Reader。',
-                    ),
-                    onTap: () async {
-                      final ok = await state.installWindowsContextMenu();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              ok ? '右键菜单已安装' : '安装失败，请确认这是 Windows 桌面版',
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.delete_outline),
-                    title: const Text('卸载「用 Reader 打开」右键菜单'),
-                    subtitle: const Text('只删除 Reader 注册的右键菜单，不删除 Reader 或书籍。'),
-                    onTap: () async {
-                      final ok = await state.uninstallWindowsContextMenu();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              ok ? '右键菜单已卸载' : '卸载失败，请确认这是 Windows 桌面版',
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
             const Padding(
               padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
               child: Text(
