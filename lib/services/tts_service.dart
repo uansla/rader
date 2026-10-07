@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'embedded_tts.dart';
 import 'neural_tts.dart';
 import 'matcha_tts.dart';
+import 'crash_log_service.dart';
 
 /// 朗读服务，优先级：
 /// 1. 系统语音引擎（flutter_tts，音质好、多音色）
@@ -57,27 +58,52 @@ class TtsService {
     }
     if (!_useSystem) {
       if (Platform.isWindows) {
-        if (_isLegacyWindows()) {
-          // Windows 7/8/8.1：不加载现代 Matcha/sherpa-onnx 原生链路。
-          // 使用与老系统兼容性更好的内置 eSpeak 兜底。
-          final dir = File(Platform.resolvedExecutable).parent.path;
-          final data = p.join(dir, 'espeak-ng-data');
-          if (Directory(data).existsSync()) {
-            _dataPath = data;
-          }
-        } else {
+        final dir = File(Platform.resolvedExecutable).parent.path;
+        final data = p.join(dir, 'espeak-ng-data');
+        if (Directory(data).existsSync()) {
+          _dataPath = data;
+        }
+
+        if (!_isLegacyWindows()) {
           _matcha = MatchaTts();
           final paths = await _resolveMatchaPaths();
           if (paths != null) {
             _dataPath = paths.dataPath;
-            _matchaReady = await _matcha!.init(
-              acousticModelPath: paths.acousticModelPath,
-              vocoderPath: paths.vocoderPath,
-              lexiconPath: paths.lexiconPath,
-              tokensPath: paths.tokensPath,
-              ruleFsts: paths.ruleFsts,
-              numThreads: 2,
-            );
+            var matchaErrorRecorded = false;
+            try {
+              _matchaReady = await _matcha!
+                  .init(
+                    acousticModelPath: paths.acousticModelPath,
+                    vocoderPath: paths.vocoderPath,
+                    lexiconPath: paths.lexiconPath,
+                    tokensPath: paths.tokensPath,
+                    ruleFsts: paths.ruleFsts,
+                    runtimeDirectory: paths.runtimeDirectory,
+                    numThreads: 2,
+                  )
+                  .timeout(
+                    const Duration(seconds: 15),
+                    onTimeout: () => false,
+                  );
+            } catch (error, stack) {
+              _matchaReady = false;
+              matchaErrorRecorded = true;
+              await CrashLogService.recordError(
+                source: 'Matcha TTS 初始化',
+                error: error,
+                stack: stack,
+              );
+            }
+            if (!_matchaReady) {
+              _matcha?.dispose();
+              _matcha = null;
+              if (!matchaErrorRecorded) {
+                await CrashLogService.recordError(
+                  source: 'Matcha TTS',
+                  error: StateError('Matcha 初始化失败，已切换到 eSpeak 兜底'),
+                );
+              }
+            }
           }
         }
       } else {
@@ -315,12 +341,14 @@ class TtsService {
     String lexiconPath,
     String tokensPath,
     String ruleFsts,
+    String runtimeDirectory,
   })?> _resolveMatchaPaths() async {
     if (!Platform.isWindows) return null;
     try {
       final dir = File(Platform.resolvedExecutable).parent.path;
       final matchaDir = Directory(p.join(dir, 'matcha-icefall-zh-baker'));
       final dataPath = p.join(dir, 'espeak-ng-data');
+      final runtimeDirectory = p.join(dir, 'matcha-runtime');
       final acousticModelPath =
           p.join(matchaDir.path, 'model-steps-3.onnx');
       final vocoderPath = p.join(dir, 'vocos-22khz-univ.onnx');
@@ -350,6 +378,7 @@ class TtsService {
         lexiconPath: lexiconPath,
         tokensPath: tokensPath,
         ruleFsts: ruleFsts,
+        runtimeDirectory: runtimeDirectory,
       );
     } catch (_) {
       return null;

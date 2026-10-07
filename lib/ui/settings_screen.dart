@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../core/app_settings.dart';
 import '../services/font_manager.dart';
+import '../services/crash_log_service.dart';
 import 'lan_sync_screen.dart';
 import 'stats_screen.dart';
 
@@ -169,10 +170,69 @@ class SettingsScreen extends StatelessWidget {
           ),
           if (Platform.isWindows) ...[
             const SizedBox(height: 8),
-            const _Header('Windows 右键打开'),
+            const _Header('Windows 错误与右键'),
             Card(
               child: Column(
                 children: [
+                  ListTile(
+                    leading: const Icon(Icons.bug_report_outlined),
+                    title: const Text('错误日志'),
+                    subtitle: Text(
+                      '只记录闪退和未处理报错：${CrashLogService.logPath}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.folder_open_outlined),
+                    onTap: () async {
+                      final ok = await CrashLogService.openLogFolder();
+                      if (context.mounted && !ok) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('无法打开错误日志目录')),
+                        );
+                      }
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.ads_click_outlined),
+                    title: const Text('安装「用 Reader 打开」右键菜单'),
+                    subtitle: const Text(
+                      '在 TXT、EPUB、MOBI、AZW3、HTML、MD、FB2、ODT、DOCX 及常见音频文件上右键即可打开 Reader。',
+                    ),
+                    onTap: () async {
+                      final ok = await state.installWindowsContextMenu();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok ? '右键菜单已安装' : '安装失败，请确认这是 Windows 桌面版',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline),
+                    title: const Text('卸载「用 Reader 打开」右键菜单'),
+                    subtitle: const Text('只删除 Reader 注册的右键菜单，不删除 Reader 或书籍。'),
+                    onTap: () async {
+                      final ok = await state.uninstallWindowsContextMenu();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok ? '右键菜单已卸载' : '卸载失败，请确认这是 Windows 桌面版',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
                   ListTile(
                     leading: const Icon(Icons.ads_click_outlined),
                     title: const Text('安装「用 Reader 打开」右键菜单'),
@@ -318,7 +378,7 @@ class SettingsScreen extends StatelessWidget {
             child: ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('Reader'),
-              subtitle: Text('本地小说与有声书阅读器 v1.1.0'),
+              subtitle: Text('本地小说与有声书阅读器 v1.3.8'),
             ),
           ),
         ],

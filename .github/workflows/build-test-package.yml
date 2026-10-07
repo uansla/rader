@@ -14,11 +14,57 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Visual Studio 2019 Build Tools
+        shell: pwsh
+        run: |
+          $vswhere = "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found on the GitHub runner."
+          }
+
+          $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null
+
+          if (-not $vs2019) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools_2019.exe"
+            Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
+
+            $arguments = @(
+              "--quiet",
+              "--wait",
+              "--norestart",
+              "--nocache",
+              "--installPath",
+              "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools",
+              "--add",
+              "Microsoft.VisualStudio.Workload.VCTools",
+              "--add",
+              "Microsoft.VisualStudio.Component.Windows10SDK.19041",
+              "--includeRecommended"
+            )
+
+            $installer = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru
+            if ($installer.ExitCode -notin @(0, 3010)) {
+              throw "Visual Studio 2019 Build Tools installation failed: exit code $($installer.ExitCode)"
+            }
+
+            $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null
+          }
+
+          if (-not $vs2019) {
+            throw "Visual Studio 2019 with VC tools is still unavailable."
+          }
+
+          $vs2019 = $vs2019 | Select-Object -First 1
+          Write-Host "Visual Studio 2019: $vs2019"
+          Add-Content -Path $env:GITHUB_ENV -Value "GYP_MSVS_OVERRIDE_PATH=$vs2019"
+          Add-Content -Path $env:GITHUB_ENV -Value "VSINSTALLDIR=$vs2019"
+          & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property displayName,installationVersion
 
       - name: Cache Flutter 3.16.9 SDK
         uses: actions/cache@v4
@@ -92,6 +138,12 @@ jobs:
       - name: Test
         run: flutter test --no-pub
 
+      - name: Clean stale Windows CMake cache
+        shell: pwsh
+        run: |
+          Remove-Item "build/windows/x64" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "build/native_assets" -Recurse -Force -ErrorAction SilentlyContinue
+
       - name: Build Windows x64
         run: flutter build windows --release --no-pub
 
@@ -121,7 +173,57 @@ jobs:
           }
           Copy-Item $dataSrc $dataDst -Recurse -Force
 
-          $matchaArchive = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker.tar.bz2"
+          # Bundle the VS2019 v142 CRT for old Windows systems.
+          $vswhere = "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null | Select-Object -First 1
+          if (-not $vs2019) {
+            throw "Visual Studio 2019 installation path was not found."
+          }
+
+          $crtRoot = Get-ChildItem (Join-Path $vs2019 "VC\Redist\MSVC") -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $crtRoot) {
+            throw "VC++ v142 redist directory was not found."
+          }
+
+          $crtDir = Join-Path $crtRoot.FullName "x64\Microsoft.VC142.CRT"
+          if (-not (Test-Path $crtDir)) {
+            throw "VC++ v142 x64 CRT directory was not found: $crtDir"
+          }
+          Copy-Item (Join-Path $crtDir "*.dll") $releaseDir -Force
+
+          # Bundle Universal CRT files from the Windows SDK when available.
+          $kitRedist = "\${env:ProgramFiles(x86)}\Windows Kits\10\Redist"
+          $ucrtBase = Get-ChildItem $kitRedist -Recurse -Filter "ucrtbase.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "\\ucrt\\DLLs\\x64\\" } | Sort-Object FullName -Descending | Select-Object -First 1
+          if ($ucrtBase) {
+            Copy-Item (Join-Path $ucrtBase.Directory.FullName "*.dll") $releaseDir -Force
+            Write-Host "Bundled UCRT from $($ucrtBase.Directory.FullName)"
+          } else {
+            Write-Warning "Windows SDK UCRT app-local files were not found."
+          }
+
+          # Bundle d3dcompiler_47 for legacy Skia/ANGLE systems.
+          $d3dCompiler = Get-ChildItem $kitRedist -Recurse -Filter "d3dcompiler_47.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($d3dCompiler) {
+            Copy-Item $d3dCompiler.FullName $releaseDir -Force
+            Write-Host "Bundled d3dcompiler_47.dll"
+          } else {
+            Write-Warning "d3dcompiler_47.dll was not found in the Windows SDK."
+          }
+
+          # Keep modern sherpa/ONNX binaries isolated. Legacy Windows never loads them.
+          $matchaRuntimeDir = Join-Path $releaseDir "matcha-runtime"
+          if (Test-Path $matchaRuntimeDir) {
+            Remove-Item $matchaRuntimeDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $matchaRuntimeDir | Out-Null
+          foreach ($file in @("sherpa-onnx-c-api.dll", "onnxruntime.dll")) {
+            $source = Join-Path $releaseDir $file
+            if (-not (Test-Path $source)) {
+              throw "Generated sherpa runtime file is missing: $source"
+            }
+            Move-Item $source $matchaRuntimeDir -Force
+          }
+
           $matchaRoot = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker"
 
           if (Test-Path $matchaArchive) {
@@ -184,7 +286,7 @@ jobs:
           $testNote = @(
             "Reader Windows x64 测试版",
             "",
-            "本版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音。",
+            "本版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音；Windows 7/8/8.1 自动使用内置 eSpeak 兼容路径，Windows 10/11 使用 Matcha。",
             "Matcha 声学模型 + Vocos 声码器约 123 MB。",
             "",
             "运行：双击 reader.exe",
@@ -196,7 +298,7 @@ jobs:
             "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
             "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
             "",
-            "Matcha 模型文件位于 matcha-icefall-zh-baker 目录，Vocos 位于 Release 根目录。",
+            "Matcha 模型文件位于 matcha-icefall-zh-baker 目录，Vocos 位于 Release 根目录；sherpa-onnx 原生运行库位于 matcha-runtime 目录。",
             "",
             "If Windows SmartScreen appears, choose More info and run. This is an unsigned test build."
           ) -join [Environment]::NewLine
@@ -217,11 +319,14 @@ jobs:
 
           $required = @(
             "reader.exe",
-            "sherpa-onnx-c-api.dll",
-            "onnxruntime.dll",
+            "vcruntime140.dll",
+            "vcruntime140_1.dll",
+            "msvcp140.dll",
             "espeak-ng.dll",
             "vocos-22khz-univ.onnx",
-            "espeak-ng-data"
+            "d3dcompiler_47.dll",
+            "espeak-ng-data",
+            "matcha-runtime"
           )
 
           foreach ($item in $required) {
@@ -230,22 +335,26 @@ jobs:
             }
           }
 
+          if (-not (Test-Path (Join-Path $releaseDir "ucrtbase.dll"))) {
+            throw "Bundled ucrtbase.dll is missing."
+          }
+
+          $matchaRuntime = Join-Path $releaseDir "matcha-runtime"
+          foreach ($item in @("sherpa-onnx-c-api.dll", "onnxruntime.dll")) {
+            if (-not (Test-Path (Join-Path $matchaRuntime $item))) {
+              throw "Matcha native runtime file is missing: $item"
+            }
+          }
+
           $matchaDir = Join-Path $releaseDir "matcha-icefall-zh-baker"
-          foreach ($item in @(
-            "model-steps-3.onnx",
-            "lexicon.txt",
-            "tokens.txt",
-            "phone.fst",
-            "date.fst",
-            "number.fst"
-          )) {
+          foreach ($item in @("model-steps-3.onnx","lexicon.txt","tokens.txt","phone.fst","date.fst","number.fst")) {
             if (-not (Test-Path (Join-Path $matchaDir $item))) {
               throw "Required Matcha release item is missing: $item"
             }
           }
 
           Write-Host "Windows executable: $($exe.FullName)"
-          Write-Host "Windows Matcha release files verified."
+          Write-Host "Legacy runtime bundle and Matcha files verified."
 
       - name: Verify Matcha TTS synthesis
         shell: pwsh
@@ -356,7 +465,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.3.7_Windows_x64.zip"
+          $zip = "Reader_v1.3.8_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -375,10 +484,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.3.6_Windows_x64.zip"
-          $tag = "v1.3.7-windows-${{ github.run_number }}"
-          $title = "Reader v1.3.7 Windows x64 兼容测试版 #${{ github.run_number }}"
-          $notes = "Reader Windows 7-11 x64 兼容测试版（Win7/8/8.1 使用旧版 Skia/内置 eSpeak 兼容路径，Win10/11 保留 Matcha）。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Matcha Icefall zh-Baker 声学模型、Vocos 声码器及 espeak-ng-data。Windows 默认关闭 Impeller，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
+          $zip = "Reader_v1.3.8_Windows_x64.zip"
+          $tag = "v1.3.8-windows-${{ github.run_number }}"
+          $title = "Reader v1.3.8 Windows x64 兼容测试版 #${{ github.run_number }}"
+          $notes = "Reader Windows 7-11 x64 兼容测试版（Win7/8/8.1 使用旧版 Skia/内置 eSpeak 兼容路径，Win10/11 保留 Matcha）。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库、D3D 编译组件、Matcha Icefall zh-Baker 声学模型、Vocos 声码器、sherpa-onnx 运行库及 espeak-ng-data。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。Windows 默认关闭 Impeller，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"

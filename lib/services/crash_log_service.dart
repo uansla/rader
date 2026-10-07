@@ -49,6 +49,40 @@ class CrashLogService {
     return _record(source: 'Zone', error: error, stack: stack);
   }
 
+  /// 记录明确发生的错误，但不记录普通运行状态。
+  static Future<void> recordError({
+    required String source,
+    required Object error,
+    StackTrace? stack,
+  }) {
+    return _record(
+      source: source,
+      error: error,
+      stack: stack ?? StackTrace.current,
+    );
+  }
+
+  static bool get hasLogFile => File(logPath).existsSync();
+
+  /// 在 Windows 文件资源管理器中打开错误日志所在目录。
+  static Future<bool> openLogFolder() async {
+    try {
+      final dir = File(logPath).parent;
+      await dir.create(recursive: true);
+      if (Platform.isWindows) {
+        final process = await Process.start(
+          'explorer.exe',
+          <String>[dir.path],
+          mode: ProcessStartMode.detached,
+        );
+        return process.pid > 0;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<void> selfTest() {
     return _record(
       source: 'SelfTest',
@@ -82,6 +116,12 @@ class CrashLogService {
     try {
       final file = File(logPath);
       await file.parent.create(recursive: true);
+
+      // 只保留一个错误日志文件；异常积累过大时重新开始记录。
+      if (await file.exists() && await file.length() > 5 * 1024 * 1024) {
+        await file.writeAsString('');
+      }
+
       await file.writeAsString(
         line.toString(),
         mode: FileMode.append,

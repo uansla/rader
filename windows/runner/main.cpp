@@ -29,12 +29,32 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
 
+  bool utility_mode = false;
+  for (const auto& arg : command_line_arguments) {
+    if (arg == "--tts-self-test" ||
+        arg == "--crash-log-self-test" ||
+        arg == "--install-context-menu" ||
+        arg == "--uninstall-context-menu") {
+      utility_mode = true;
+      break;
+    }
+  }
+
+  if (!utility_mode) {
+    // 正常应用进程建立运行标记；CI/右键注册自检不会留下异常退出标记。
+    reader_crash::MarkStartup();
+  }
+
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
   if (!window.Create(L"Reader 阅读器", origin, size)) {
+    reader_crash::LogError(L"FlutterWindow 创建失败，Reader 无法创建主窗口。");
+    if (!utility_mode) {
+      reader_crash::MarkCleanExit();
+    }
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
@@ -46,5 +66,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   ::CoUninitialize();
+  if (!utility_mode) {
+    reader_crash::MarkCleanExit();
+  }
   return EXIT_SUCCESS;
 }
