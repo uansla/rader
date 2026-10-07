@@ -42,7 +42,7 @@ dependencies:
   charset_converter: 2.3.0
   just_audio: 0.9.46
   flutter_tts: 4.0.2
-  file_picker: 8.0.7
+  file_picker: 6.2.1
   desktop_drop: 0.4.4
   qr_flutter: 4.1.0
   shared_preferences: 2.2.2
