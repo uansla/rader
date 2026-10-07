@@ -48,7 +48,8 @@ jobs:
         shell: pwsh
         run: |
           $flutterVersion = flutter --version
-          if ($flutterVersion -notmatch "3\.16\.9") {
+          if (($flutterVersion -join "
+") -notmatch "3\.16\.9") {
             throw "Unexpected Flutter version. Expected Flutter 3.16.9."
           }
 
