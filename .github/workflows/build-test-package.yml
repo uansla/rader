@@ -80,8 +80,11 @@ jobs:
           }
           throw "Unable to scan source for withValues API. git grep exit code: $grepExit"
 
-      - name: Flutter dependencies
-        run: flutter pub get
+      - name: Dart dependency resolution
+        shell: pwsh
+        run: |
+          dart --version
+          dart pub get
 
       - name: Analyze
         run: flutter analyze
