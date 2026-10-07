@@ -23,7 +23,7 @@ jobs:
       - name: Install Visual Studio 2019 Build Tools
         shell: pwsh
         run: |
-          $vswhere = "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (-not (Test-Path $vswhere)) {
             throw "vswhere.exe was not found on the GitHub runner."
           }
@@ -40,7 +40,7 @@ jobs:
               "--norestart",
               "--nocache",
               "--installPath",
-              "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools",
+              "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools",
               "--add",
               "Microsoft.VisualStudio.Workload.VCTools",
               "--add",
@@ -174,7 +174,7 @@ jobs:
           Copy-Item $dataSrc $dataDst -Recurse -Force
 
           # Bundle the VS2019 v142 CRT for old Windows systems.
-          $vswhere = "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null | Select-Object -First 1
           if (-not $vs2019) {
             throw "Visual Studio 2019 installation path was not found."
@@ -192,7 +192,7 @@ jobs:
           Copy-Item (Join-Path $crtDir "*.dll") $releaseDir -Force
 
           # Bundle Universal CRT files from the Windows SDK when available.
-          $kitRedist = "\${env:ProgramFiles(x86)}\Windows Kits\10\Redist"
+          $kitRedist = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist"
           $ucrtBase = Get-ChildItem $kitRedist -Recurse -Filter "ucrtbase.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "\\ucrt\\DLLs\\x64\\" } | Sort-Object FullName -Descending | Select-Object -First 1
           if ($ucrtBase) {
             Copy-Item (Join-Path $ucrtBase.Directory.FullName "*.dll") $releaseDir -Force
