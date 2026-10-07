@@ -20,9 +20,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
-  // Disable Impeller on Windows for broader compatibility with older GPUs and drivers.
-  // This keeps the Skia renderer and avoids a class of driver-specific startup/render crashes.
-  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+  // Flutter 3.18.x uses the Skia renderer on Windows. This compatibility
+  // build targets Windows 7 through Windows 11 and older GPU hardware.
+  // Do not enable the newer Windows Impeller path.
+  ::SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX |
+                 SEM_NOOPENFILEERRORBOX);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
