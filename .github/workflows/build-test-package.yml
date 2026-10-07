@@ -269,11 +269,38 @@ jobs:
           '@
           Set-Content -Path (Join-Path $releaseDir "Uninstall-Reader-Right-Click.cmd") -Value $uninstallScript -Encoding UTF8
 
+      - name: Verify crash log recording
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $exe = Join-Path $releaseDir "reader.exe"
+          $logPath = Join-Path $env:LOCALAPPDATA "Reader\Reader-Crash.log"
+
+          if (Test-Path $logPath) {
+            Remove-Item $logPath -Force
+          }
+
+          $selfTest = Start-Process -FilePath $exe -ArgumentList "--crash-log-self-test" -Wait -PassThru -WindowStyle Hidden
+          if ($selfTest.ExitCode -ne 0) {
+            throw "Crash log self-test failed with exit code $($selfTest.ExitCode)"
+          }
+
+          if (-not (Test-Path $logPath)) {
+            throw "Crash log file was not created: $logPath"
+          }
+
+          $content = Get-Content -Path $logPath -Raw
+          if ($content -notmatch "来源: SelfTest") {
+            throw "Crash log does not contain the self-test error record."
+          }
+
+          Remove-Item $logPath -Force
+
       - name: Package Windows x64
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.3.4_Windows_x64.zip"
+          $zip = "Reader_v1.3.5_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -292,10 +319,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.3.4_Windows_x64.zip"
-          $tag = "v1.3.4-windows-${{ github.run_number }}"
-          $title = "Reader v1.3.4 Windows x64 测试版 #${{ github.run_number }}"
-          $notes = "Reader Windows x64 测试版。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Matcha Icefall zh-Baker 声学模型、Vocos 声码器及 espeak-ng-data。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
+          $zip = "Reader_v1.3.5_Windows_x64.zip"
+          $tag = "v1.3.5-windows-${{ github.run_number }}"
+          $title = "Reader v1.3.5 Windows x64 测试版 #${{ github.run_number }}"
+          $notes = "Reader Windows x64 测试版。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Matcha Icefall zh-Baker 声学模型、Vocos 声码器及 espeak-ng-data。Windows 默认关闭 Impeller，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"
