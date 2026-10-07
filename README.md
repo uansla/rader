@@ -10,9 +10,10 @@
 
 - **📚 多格式书架**：TXT / EPUB / MOBI / HTML / MD 文本书 + MP3 / M4A / FLAC 有声书
 - **🔊 离线朗读（核心）**：三级引擎自动回退
-  1. **系统语音引擎**（有则优先，音质好、多音色，如手机的 Google TTS）
-  2. **内嵌神经语音「超文 Chaowen」**（Piper + ONNX，离线中文女声，Android/Windows 内置）
-  3. **espeak-ng 兜底**（任何设备保证能读）
+  1. **系统语音引擎**（有则优先，音质好、多音色）
+  2. **Windows：Matcha Icefall zh-Baker**（sherpa-onnx + Vocos，CPU 离线中文普通话）
+  3. **Android：原有 Piper 神经语音**
+  4. **espeak-ng 兜底**（模型加载失败时尽量保证能读）
 - **📖 朗读体验**：跟随朗读自动滚动、读完一章自动翻下一章、点击即停、退出即停
 - **📶 局域网传书**：设备间自动发现 + HTTP 直传，无需数据线
 - **📊 阅读统计**：每日时长、日历热力图、连续打卡、书籍阅读时长
@@ -29,9 +30,9 @@
 | 平台 | 文件 | 说明 |
 |------|------|------|
 | Android | `Reader_vX.Y.Z.apk` | 直接安装（arm64，约 141MB，含离线语音模型） |
-| Windows | `Reader_Windows.zip` | 解压即用，双击 `reader.exe` |
+| Windows | `Reader_Windows.zip` | Windows 7 / 8 / 8.1 / 10 / 11 x64 兼容测试版，解压即用 |
 
-> Windows 首次朗读会自动加载内置离线语音（超文 Chaowen），无需额外配置。
+> Windows 首次朗读会自动加载内置 Matcha Icefall zh-Baker 中文离线语音，无需额外配置。
 > Android 需要 Android 10+（API 29+）。
 
 📚 完整文档见 [`docs/`](docs/README.md)（同步 GitHub Wiki）。
@@ -64,15 +65,18 @@
 朗读采用三级回退，保证任何设备都能读：
 
 ```
-系统引擎（Google TTS / SAPI 等，多音色）
-        ↓ 无中文语音时
-内嵌神经语音「超文 Chaowen」（Piper huayan，离线女声）
+系统引擎（Windows SAPI / 设备系统 TTS）
+        ↓ 无可用中文语音时
+Windows：Matcha Icefall zh-Baker（CPU 离线）
+Android：Piper 神经语音
         ↓ 模型/库加载失败时
-espeak-ng（离线机器人腔兜底）
+espeak-ng（离线兜底）
 ```
 
-- 手机（有 Google TTS）：优先使用系统引擎，多音色可选。
-- 平板 / Windows（无可用系统中文引擎）：自动使用**内嵌超文 Chaowen 神经语音**（完全离线，约 63MB 模型随包内置）。
+- Windows：优先系统中文语音；没有可用系统中文语音时使用 **Matcha Icefall zh-Baker + Vocos**（CPU 离线）。
+- Android：现阶段保持原有 Piper 神经语音路径。
+- Reader 只在异常/崩溃时写错误日志，不记录正常运行日志。Windows 错误日志位置：`%LOCALAPPDATA%\\Reader\\Reader-Crash.log`。
+- Windows 兼容构建使用 Flutter 3.18.6 + Skia，目标为 Windows 7 / 8 / 8.1 / 10 / 11 x64。
 
 ---
 
@@ -130,7 +134,7 @@ assets/                        # 华研语音模型（ONNX）
 
 本仓库代码遵循 MIT License（见 `LICENSE`）。
 
-> 注意：内置的华研语音模型（`zh_CN-chaowen-medium.onnx`）遵循 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)（仅限非商业使用），请遵守其授权条款。
+> 注意：Android 端原有 Piper 模型资源遵循 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)（仅限非商业使用），请遵守其授权条款。
 
 ---
 
@@ -144,3 +148,7 @@ assets/                        # 华研语音模型（ONNX）
 
 
 > Windows 测试版当前使用 Piper「超文 Chaowen Medium」（约 63.2MB，22.05kHz）。Android 端现阶段仍保留原有模型资源，后续 Matcha Icefall zh-Baker 测试确定后再统一调整。
+
+### Windows 兼容说明
+
+最新 Windows 兼容版以 Flutter 3.18.6 构建，避开 Flutter 3.19 以后取消的 Windows 7/8 支持路径，并关闭新版 Impeller。它主要针对 Windows 7 SP1、Windows 8、Windows 8.1、Windows 10 和 Windows 11 的 64 位系统，以及较老的显卡环境。没有音频输出驱动时，任何软件都无法让物理扬声器发声；Reader 仍应能够启动、打开和阅读文件，并在发生未处理错误时写入崩溃日志。
