@@ -76,7 +76,7 @@ espeak-ng（离线兜底）
 - Windows：优先系统中文语音；没有可用系统中文语音时使用 **Matcha Icefall zh-Baker + Vocos**（CPU 离线）。
 - Android：现阶段保持原有 Piper 神经语音路径。
 - Reader 只在异常/崩溃时写错误日志，不记录正常运行日志。Windows 错误日志位置：`%LOCALAPPDATA%\\Reader\\Reader-Crash.log`。
-- Windows 兼容构建使用 Flutter 3.18.6 + Skia，目标为 Windows 7 / 8 / 8.1 / 10 / 11 x64。
+- Windows 兼容构建使用 Flutter 3.16.9 + Skia，目标为 Windows 7 / 8 / 8.1 / 10 / 11 x64。
 
 ---
 
@@ -151,4 +151,4 @@ assets/                        # 华研语音模型（ONNX）
 
 ### Windows 兼容说明
 
-最新 Windows 兼容版以 Flutter 3.18.6 构建，避开 Flutter 3.19 以后取消的 Windows 7/8 支持路径，并关闭新版 Impeller。它主要针对 Windows 7 SP1、Windows 8、Windows 8.1、Windows 10 和 Windows 11 的 64 位系统，以及较老的显卡环境。没有音频输出驱动时，任何软件都无法让物理扬声器发声；Reader 仍应能够启动、打开和阅读文件，并在发生未处理错误时写入崩溃日志。
+最新 Windows 兼容版以 Flutter 3.16.9 构建，避开 Flutter 3.19 以后取消的 Windows 7/8 支持路径，并关闭新版 Impeller。它主要针对 Windows 7 SP1、Windows 8、Windows 8.1、Windows 10 和 Windows 11 的 64 位系统，以及较老的显卡环境。没有音频输出驱动时，任何软件都无法让物理扬声器发声；Reader 仍应能够启动、打开和阅读文件，并在发生未处理错误时写入崩溃日志。
