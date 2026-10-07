@@ -68,8 +68,9 @@ jobs:
             throw "Legacy Windows build must not use the newer Impeller API."
           }
 
-          $matches = git grep -n "withValues(" -- lib
-          if ($LASTEXITCODE -eq 0) {
+          $withValuesMatches = @(git grep -n "withValues(" -- lib 2>$null)
+          if ($withValuesMatches.Count -gt 0) {
+            $withValuesMatches | ForEach-Object { Write-Host $_ }
             throw "Flutter 3.16.9 incompatible withValues API remains in lib."
           }
 
