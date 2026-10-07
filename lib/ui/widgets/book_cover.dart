@@ -25,7 +25,7 @@ class BookCover extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
+            color: Colors.black.withOpacity(0.18),
             blurRadius: 4,
             offset: const Offset(1, 2),
           ),
@@ -54,7 +54,7 @@ class BookCover extends StatelessWidget {
             child: Icon(
               book.isAudio ? Icons.headphones : Icons.auto_stories,
               size: 14,
-              color: Colors.white.withValues(alpha: 0.7),
+              color: Colors.white.withOpacity(0.7),
             ),
           ),
           if (book.isFavorite)
