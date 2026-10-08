@@ -141,7 +141,7 @@ class TtsService {
     try {
       final version = Platform.operatingSystemVersion;
       // Windows 7=6.1, Windows 8=6.2, Windows 8.1=6.3.
-      final match = RegExp(r'(\\d+)\\.(\\d+)').firstMatch(version);
+      final match = RegExp(r'(\d+)\.(\d+)').firstMatch(version);
       if (match == null) return false;
       final major = int.tryParse(match.group(1) ?? '');
       final minor = int.tryParse(match.group(2) ?? '');
