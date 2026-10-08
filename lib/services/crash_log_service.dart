@@ -98,7 +98,7 @@ class CrashLogService {
   }) async {
     final text = error?.toString() ?? '<unknown error>';
     final stackText = stack?.toString() ?? '<no stack trace>';
-    final key = '$source\n$text\n$stackText';
+    final key = '$text\n$stackText';
     if (!_recentKeys.add(key)) return;
     if (_recentKeys.length > 32) {
       _recentKeys.remove(_recentKeys.first);

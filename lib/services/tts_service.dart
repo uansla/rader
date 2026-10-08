@@ -352,7 +352,7 @@ class TtsService {
       final dir = File(Platform.resolvedExecutable).parent.path;
       final matchaDir = Directory(p.join(dir, 'matcha-icefall-zh-baker'));
       final dataPath = p.join(dir, 'espeak-ng-data');
-      final runtimeDirectory = p.join(dir, 'matcha-runtime');
+      final runtimeDirectory = dir;
       final acousticModelPath =
           p.join(matchaDir.path, 'model-steps-3.onnx');
       final vocoderPath = p.join(dir, 'vocos-22khz-univ.onnx');

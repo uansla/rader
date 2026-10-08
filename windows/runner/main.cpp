@@ -2,7 +2,6 @@
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
-#include <cwchar>
 #include <string>
 #include <vector>
 
