@@ -338,7 +338,7 @@ class SettingsScreen extends StatelessWidget {
             child: ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('Reader'),
-              subtitle: Text('本地小说与有声书阅读器 v1.3.9'),
+              subtitle: Text('本地小说与有声书阅读器 v1.4.3'),
             ),
           ),
         ],

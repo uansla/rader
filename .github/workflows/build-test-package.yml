@@ -133,6 +133,34 @@ jobs:
           dart --version
           dart pub get
 
+      - name: Patch sherpa-onnx 1.13.4 for Dart 3.2.6
+        shell: pwsh
+        run: |
+          $configPath = ".dart_tool/package_config.json"
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $pkg = $config.packages | Where-Object { $_.name -eq "sherpa_onnx" } | Select-Object -First 1
+          if ($null -eq $pkg) {
+            throw "sherpa_onnx package was not found in package_config.json."
+          }
+
+          $packageRoot = ([System.Uri]$pkg.rootUri).LocalPath
+          $source = Join-Path $packageRoot "libsrcoffline_speaker_diarization.dart"
+          if (-not (Test-Path $source)) {
+            throw "sherpa_onnx 1.13.4 source file was not found: $source"
+          }
+
+          $content = Get-Content $source -Raw
+          if ($content -notmatch [regex]::Escape("final s = segments + i;")) {
+            throw "Expected sherpa Dart 3.2 compatibility issue was not found; refusing to patch an unknown source."
+          }
+
+          $content = $content.Replace(
+            "final s = segments + i;",
+            "final s = segments.elementAt(i);"
+          )
+          Set-Content -Path $source -Value $content -Encoding UTF8
+          Write-Host "Patched sherpa_onnx 1.13.4 Pointer arithmetic for Dart 3.2.6."
+
       - name: Prepare Windows plugin links
         shell: pwsh
         run: |
@@ -581,7 +609,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.4.1_Windows_x64.zip"
+          $zip = "Reader_v1.4.3_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -600,9 +628,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.4.1_Windows_x64.zip"
-          $tag = "v1.4.1-windows-${{ github.run_number }}"
-          $title = "Reader v1.4.1 Windows x64 兼容测试版 #${{ github.run_number }}"
+          $zip = "Reader_v1.4.3_Windows_x64.zip"
+          $tag = "v1.4.3-windows-${{ github.run_number }}"
+          $title = "Reader v1.4.3 Windows x64 兼容测试版 #${{ github.run_number }}"
           $notes = "Reader Windows 7 SP1-11 x64 兼容测试版（Win7/8/8.1 使用旧版 Skia/内置 eSpeak 兼容路径，Win10/11 保留 Matcha）。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型；兼容构建使用 Flutter 3.16.9 / Dart 3.2.6。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库、D3D 编译组件、Matcha Icefall zh-Baker 声学模型、Vocos 声码器、sherpa-onnx 运行库及 espeak-ng-data。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {

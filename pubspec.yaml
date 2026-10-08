@@ -13,7 +13,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Read more about Android versioning at https://developer.android.com/studio/publish/versioning
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.4.2+16
+version: 1.4.3+17
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -51,7 +51,7 @@ dependencies:
   just_audio_windows: 0.2.3
   permission_handler: 11.3.1
   ffi: 2.1.0
-  sherpa_onnx: 1.13.7
+  sherpa_onnx: 1.13.4
 
 dev_dependencies:
   flutter_test:
