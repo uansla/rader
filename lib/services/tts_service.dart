@@ -140,11 +140,13 @@ class TtsService {
     if (!Platform.isWindows) return false;
     try {
       final version = Platform.operatingSystemVersion;
-      // Win7=6.1, Win8=6.2, Win8.1=6.3.
-      return RegExp(
-        r'(Windows\s+7\b|Windows\s+8(?:\.1)?\b|Windows\s+6\.[123]\b)',
-        caseSensitive: false,
-      ).hasMatch(version);
+      // Windows 7=6.1, Windows 8=6.2, Windows 8.1=6.3.
+      final match = RegExp(r'(\\d+)\\.(\\d+)').firstMatch(version);
+      if (match == null) return false;
+      final major = int.tryParse(match.group(1) ?? '');
+      final minor = int.tryParse(match.group(2) ?? '');
+      if (major == null || minor == null) return false;
+      return major < 6 || (major == 6 && minor <= 3);
     } catch (_) {
       return false;
     }

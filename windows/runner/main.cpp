@@ -97,7 +97,7 @@ bool RelaunchWithSoftwareRenderingIfNeeded(
     command_line.append(L" ");
     command_line.append(p);
   }
-  command_line.append(L" --enable-software-rendering");
+  command_line.append(L" --enable-software-rendering --disable-impeller");
 
   std::vector<wchar_t> mutable_command(command_line.begin(),
                                         command_line.end());
@@ -149,7 +149,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
-  // Flutter 3.18.x uses the Skia renderer on Windows. This compatibility
+  // Flutter 3.16.9 uses the Skia renderer on Windows. This compatibility
   // build targets Windows 7 through Windows 11 and older GPU hardware.
   // Do not enable the newer Windows Impeller path.
   ::SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX |
@@ -169,6 +169,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   for (const auto& arg : command_line_arguments) {
     if (arg == "--tts-self-test" ||
         arg == "--crash-log-self-test" ||
+        arg == "--native-crash-log-self-test" ||
         arg == "--install-context-menu" ||
         arg == "--uninstall-context-menu") {
       utility_mode = true;
