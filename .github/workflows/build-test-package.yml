@@ -159,7 +159,13 @@ jobs:
           $pluginNames = @(
             $matches |
               ForEach-Object { $_.Groups[1].Value } |
-              Where-Object { $_ -and -not $_.ToString().StartsWith('
+              Where-Object {
+                $_ -and
+                $_.ToString().Length -gt 0 -and
+                $_.ToString()[0] -ne [char]36
+              } |
+              Sort-Object -Unique
+          )
 
           if ($pluginNames.Count -eq 0) {
             throw "No concrete Windows plugins were found in generated_plugins.cmake."
@@ -270,19 +276,15 @@ jobs:
             Write-Warning "d3dcompiler_47.dll was not found in the Windows SDK."
           }
 
-          # Keep modern sherpa/ONNX binaries isolated. Legacy Windows never loads them.
-          $matchaRuntimeDir = Join-Path $releaseDir "matcha-runtime"
-          if (Test-Path $matchaRuntimeDir) {
-            Remove-Item $matchaRuntimeDir -Recurse -Force
-          }
-          New-Item -ItemType Directory -Path $matchaRuntimeDir | Out-Null
+          # Keep sherpa/ONNX DLLs in the Release root so Windows
+          # can resolve their bundled VC/UCRT dependencies normally.
           foreach ($file in @("sherpa-onnx-c-api.dll", "onnxruntime.dll")) {
             $source = Join-Path $releaseDir $file
             if (-not (Test-Path $source)) {
               throw "Generated sherpa runtime file is missing: $source"
             }
-            Move-Item $source $matchaRuntimeDir -Force
           }
+
 
           $matchaArchive = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker.tar.bz2"
           $matchaRoot = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker"
@@ -387,7 +389,8 @@ jobs:
             "vocos-22khz-univ.onnx",
             "d3dcompiler_47.dll",
             "espeak-ng-data",
-            "matcha-runtime"
+            "sherpa-onnx-c-api.dll",
+            "onnxruntime.dll"
           )
 
           foreach ($item in $required) {
@@ -398,13 +401,6 @@ jobs:
 
           if (-not (Test-Path (Join-Path $releaseDir "ucrtbase.dll"))) {
             throw "Bundled ucrtbase.dll is missing."
-          }
-
-          $matchaRuntime = Join-Path $releaseDir "matcha-runtime"
-          foreach ($item in @("sherpa-onnx-c-api.dll", "onnxruntime.dll")) {
-            if (-not (Test-Path (Join-Path $matchaRuntime $item))) {
-              throw "Matcha native runtime file is missing: $item"
-            }
           }
 
           $matchaDir = Join-Path $releaseDir "matcha-icefall-zh-baker"

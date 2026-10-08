@@ -147,8 +147,8 @@ assets/                        # 华研语音模型（ONNX）
 - [just_audio](https://pub.dev/packages/just_audio) / [flutter_tts](https://pub.dev/packages/flutter_tts)
 
 
-> Windows 测试版当前使用 Piper「超文 Chaowen Medium」（约 63.2MB，22.05kHz）。Android 端现阶段仍保留原有模型资源，后续 Matcha Icefall zh-Baker 测试确定后再统一调整。
+> Windows 测试版当前使用 Matcha Icefall zh-Baker + Vocos；Android 端现阶段仍保留原有模型资源。ndroid 端现阶段仍保留原有模型资源，后续 Matcha Icefall zh-Baker 测试确定后再统一调整。
 
 ### Windows 兼容说明
 
-最新 Windows 兼容版以 Flutter 3.16.9 构建，避开 Flutter 3.19 以后取消的 Windows 7/8 支持路径，并关闭新版 Impeller。它主要针对 Windows 7 SP1、Windows 8、Windows 8.1、Windows 10 和 Windows 11 的 64 位系统，以及较老的显卡环境。没有音频输出驱动时，任何软件都无法让物理扬声器发声；Reader 仍应能够启动、打开和阅读文件，并在发生未处理错误时写入崩溃日志。
+本版本 Windows 兼容构建使用 Flutter 3.16.9 + Skia，避开 Flutter 3.19 以后取消的 Windows 7/8 支持路径，并关闭新版 Impeller。它主要针对 Windows 7 SP1、Windows 8、Windows 8.1、Windows 10 和 Windows 11 的 64 位系统，以及较老的显卡环境。没有音频输出驱动时，任何软件都无法让物理扬声器发声；Reader 仍应能够启动、打开和阅读文件，并在发生未处理错误时写入崩溃日志。

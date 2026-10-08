@@ -33,7 +33,7 @@ Future<void> main(List<String> args) async {
           p.join(matchaDir, 'date.fst'),
           p.join(matchaDir, 'number.fst'),
         ].join(','),
-        runtimeDirectory: p.join(base, 'matcha-runtime'),
+        runtimeDirectory: base,
         numThreads: 2,
       );
       if (!ok) exit(2);
