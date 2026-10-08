@@ -131,57 +131,41 @@ jobs:
         run: |
           flutter --version
           dart --version
-          dart pub get
+          flutter pub get
 
-      - name: Prepare Windows plugin links
+      - name: Verify Windows plugin links
         shell: pwsh
         run: |
           $depsPath = ".flutter-plugins-dependencies"
           $linkRoot = "windows/flutter/ephemeral/.plugin_symlinks"
 
           if (-not (Test-Path $depsPath)) {
-            throw "Flutter plugin metadata was not generated: $depsPath"
+            throw "Flutter 3.16.9 plugin metadata was not generated: $depsPath"
+          }
+          if (-not (Test-Path $linkRoot)) {
+            throw "Flutter 3.16.9 plugin link directory is missing: $linkRoot"
           }
 
           $deps = Get-Content $depsPath -Raw | ConvertFrom-Json
           $windowsPlugins = @($deps.plugins.windows)
-
-          if ($windowsPlugins.Count -eq 0) {
-            Write-Host "No Windows Flutter plugins are declared; continuing."
-            exit 0
-          }
-
-          New-Item -ItemType Directory -Path $linkRoot -Force | Out-Null
+          $missing = @()
 
           foreach ($plugin in $windowsPlugins) {
-            $pluginName = $plugin.name
-            if ([string]::IsNullOrWhiteSpace($pluginName)) {
+            $name = [string]$plugin.name
+            if ([string]::IsNullOrWhiteSpace($name)) {
               continue
             }
-
-            $rootUri = [string]$plugin.packageUri
-            if ([string]::IsNullOrWhiteSpace($rootUri)) {
-              $rootUri = [string]$plugin.rootUri
+            $link = Join-Path $linkRoot $name
+            if (-not (Test-Path (Join-Path $link 'windows'))) {
+              $missing += $name
             }
-
-            if ([string]::IsNullOrWhiteSpace($rootUri)) {
-              throw "Plugin $pluginName has no package URI in .flutter-plugins-dependencies."
-            }
-
-            $packageRoot = ([Uri]$rootUri).LocalPath
-            $windowsRoot = Join-Path $packageRoot "windows"
-            if (-not (Test-Path $windowsRoot)) {
-              throw "Windows implementation for $pluginName is missing: $windowsRoot"
-            }
-
-            $linkPath = Join-Path $linkRoot $pluginName
-            if (Test-Path $linkPath) {
-              Remove-Item $linkPath -Recurse -Force
-            }
-
-            New-Item -ItemType Junction -Path $linkPath -Target $packageRoot | Out-Null
-            Write-Host "Linked $pluginName -> $packageRoot"
           }
+
+          if ($missing.Count -gt 0) {
+            throw "Missing Flutter Windows plugin links: $($missing -join ", ")"
+          }
+
+          Write-Host "Flutter 3.16.9 Windows plugin links are ready."
 
       - name: Analyze
         run: flutter analyze --no-pub --no-fatal-infos
