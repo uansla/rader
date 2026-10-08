@@ -33,7 +33,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
-# Target the Windows 7 SP1 API surface; newer Windows continue to run normally.
+# Target the Windows 7 SP1 API surface; newer Windows continue to run normally. Flutter 3.19.6 is used for legacy compatibility.
 target_compile_definitions(${BINARY_NAME} PRIVATE "_WIN32_WINNT=0x0601" "WINVER=0x0601")
 
 # Add dependency libraries and include directories. Add any application-specific

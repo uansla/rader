@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import 'app.dart';
+import 'core/reader_error_logger.dart';
 import 'services/windows_context_menu_service.dart';
 import 'services/matcha_tts.dart';
 import 'services/crash_log_service.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ReaderErrorLogger.install();
   await CrashLogService.install();
 
   if (Platform.isWindows && args.contains('--crash-log-self-test')) {
