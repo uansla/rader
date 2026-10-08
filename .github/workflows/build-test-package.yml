@@ -130,9 +130,53 @@ jobs:
         shell: pwsh
         run: |
           flutter --version
-          flutter pub get
+          dart --version
+          dart pub get
 
-      - name: Analyze
+      - name: Prepare Windows plugin links
+        shell: pwsh
+        run: |
+          $configPath = ".dart_tool/package_config.json"
+          $pluginCmake = "windows/flutter/generated_plugins.cmake"
+
+          if (-not (Test-Path $configPath)) {
+            throw "Dart package configuration was not generated: $configPath"
+          }
+          if (-not (Test-Path $pluginCmake)) {
+            throw "Generated Windows plugin list is missing: $pluginCmake"
+          }
+
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $pluginNames = @(
+            [regex]::Matches(
+              (Get-Content $pluginCmake -Raw),
+              'add_subdirectory\(flutter/ephemeral/\.plugin_symlinks/([^/]+)/windows'
+            ) | ForEach-Object { $_.Groups[1].Value }
+          ) | Sort-Object -Unique
+
+          $linkRoot = "windows/flutter/ephemeral/.plugin_symlinks"
+          New-Item -ItemType Directory -Path $linkRoot -Force | Out-Null
+
+          foreach ($pluginName in $pluginNames) {
+            $package = $config.packages | Where-Object { $_.name -eq $pluginName } | Select-Object -First 1
+            if ($null -eq $package) {
+              throw "Package $pluginName is not present in .dart_tool/package_config.json"
+            }
+
+            $packageRoot = ([Uri]$package.rootUri).LocalPath
+            $windowsRoot = Join-Path $packageRoot "windows"
+            if (-not (Test-Path $windowsRoot)) {
+              throw "Windows implementation for plugin $pluginName is missing: $windowsRoot"
+            }
+
+            $linkPath = Join-Path $linkRoot $pluginName
+            if (Test-Path $linkPath) {
+              Remove-Item $linkPath -Recurse -Force
+            }
+
+            New-Item -ItemType Junction -Path $linkPath -Target $packageRoot | Out-Null
+            Write-Host "Linked $pluginName -> $packageRoot"
+          }
         run: flutter analyze --no-pub --no-fatal-infos
 
       - name: Test
