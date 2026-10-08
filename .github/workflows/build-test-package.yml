@@ -177,6 +177,23 @@ jobs:
 
           Write-Host 'Windows Flutter plugin links prepared for Flutter 3.16.9.'
 
+      - name: Remove Android-only jni from Windows plugin list
+        shell: pwsh
+        run: |
+          $pluginCmake = "windows/flutter/generated_plugins.cmake"
+          $content = Get-Content $pluginCmake -Raw
+
+          if ($content -match '(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST\s+jni\s*\)') {
+            $content = [regex]::Replace(
+              $content,
+              '(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST\s+jni\s*\)',
+              'set(FLUTTER_FFI_PLUGIN_LIST)'
+            )
+            Set-Content -Path $pluginCmake -Value $content -Encoding UTF8
+            Write-Host "Removed Android-only jni from the Windows FFI plugin list."
+          } else {
+            Write-Host "No Android-only jni Windows FFI entry found."
+          }
       - name: Analyze
         run: flutter analyze --no-pub --no-fatal-infos
 
