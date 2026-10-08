@@ -179,11 +179,10 @@ jobs:
           $pluginCmake = "windows/flutter/generated_plugins.cmake"
           if (Test-Path $pluginCmake) {
             $generated = Get-Content $pluginCmake -Raw
-            if ($generated -notmatch "(?m)^\s*sherpa_onnx_windows\s*$") {
-              $generated = [regex]::Replace($generated, "(?m)^(\s*permission_handler_windows\s*)\r?\n(\))", "$1\r\n  sherpa_onnx_windows`r`n$2")
-              Set-Content -Path $pluginCmake -Value $generated -Encoding UTF8
-              Write-Host "Added sherpa_onnx_windows to generated Flutter plugin list."
-            }
+            $generated = $generated -replace "(?ms)list\(APPEND FLUTTER_PLUGIN_LIST.*?\)", "list(APPEND FLUTTER_PLUGIN_LIST`n  charset_converter`n  desktop_drop`n  flutter_tts`n  just_audio_windows`n  permission_handler_windows`n)"
+            $generated = $generated -replace "(?ms)list\(APPEND FLUTTER_FFI_PLUGIN_LIST.*?\)", "list(APPEND FLUTTER_FFI_PLUGIN_LIST`n  sherpa_onnx_windows`n)"
+            Set-Content -Path $pluginCmake -Value $generated -Encoding UTF8
+            Write-Host "Configured sherpa_onnx_windows as FFI plugin."
           }
           Write-Host 'Windows Flutter plugin links prepared for Flutter 3.16.9.'
 
@@ -192,17 +191,21 @@ jobs:
         run: |
           $pluginCmake = "windows/flutter/generated_plugins.cmake"
           $content = Get-Content $pluginCmake -Raw
-
-          if ($content -match '(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST\s+jni\s*\)') {
-            $content = [regex]::Replace(
-              $content,
-              '(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST\s+jni\s*\)',
-              'set(FLUTTER_FFI_PLUGIN_LIST)'
-            )
-            Set-Content -Path $pluginCmake -Value $content -Encoding UTF8
-            Write-Host "Removed Android-only jni from the Windows FFI plugin list."
-          } else {
-            Write-Host "No Android-only jni Windows FFI entry found."
+          $content = [regex]::Replace($content, "(?m)^\s*jni\s*\r?\n", "")
+          if ($content -notmatch "(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST.*?sherpa_onnx_windows") {
+            throw "sherpa_onnx_windows is missing from the Windows FFI plugin list."
+          }
+          Set-Content -Path $pluginCmake -Value $content -Encoding UTF8
+          Write-Host "Removed Android-only jni while keeping sherpa_onnx_windows."
+      - name: Verify sherpa Windows FFI plugin list
+        shell: pwsh
+        run: |
+          $content = Get-Content "windows/flutter/generated_plugins.cmake" -Raw
+          if ($content -match "(?s)list\(APPEND FLUTTER_PLUGIN_LIST.*?sherpa_onnx_windows") {
+            throw "sherpa_onnx_windows is incorrectly registered as a normal Flutter plugin."
+          }
+          if ($content -notmatch "(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST.*?sherpa_onnx_windows") {
+            throw "sherpa_onnx_windows is missing from FLUTTER_FFI_PLUGIN_LIST."
           }
       - name: Analyze
         run: flutter analyze --no-pub --no-fatal-infos
@@ -497,6 +500,19 @@ jobs:
           '@
           Set-Content -Path (Join-Path $releaseDir "Uninstall-Reader-Right-Click.cmd") -Value $uninstallScript -Encoding UTF8
 
+      - name: Verify Dart crash log recording
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $exe = Join-Path $releaseDir "reader.exe"
+          $logPath = Join-Path $env:LOCALAPPDATA "Reader\Reader-Crash.log"
+          if (Test-Path $logPath) { Remove-Item $logPath -Force }
+          $selfTest = Start-Process -FilePath $exe -ArgumentList "--dart-error-log-self-test" -Wait -PassThru -WindowStyle Hidden
+          if ($selfTest.ExitCode -ne 0) { throw "Dart crash log self-test failed with exit code $($selfTest.ExitCode)" }
+          if (-not (Test-Path $logPath)) { throw "Dart crash log file was not created: $logPath" }
+          $content = Get-Content -Path $logPath -Raw
+          if ($content -notmatch "来源: SelfTest") { throw "Dart crash log does not contain the self-test error record." }
+          Remove-Item $logPath -Force
       - name: Verify native crash log recording
         shell: pwsh
         run: |
@@ -574,10 +590,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.4.0_Windows_x64.zip"
+          $zip = "Reader_v1.4.1_Windows_x64.zip"
           $tag = "v1.4.1-windows-${{ github.run_number }}"
           $title = "Reader v1.4.1 Windows x64 兼容测试版 #${{ github.run_number }}"
-          $notes = "Reader Windows 7 SP1-11 x64 兼容测试版（Win7/8/8.1 使用旧版 Skia/内置 eSpeak 兼容路径，Win10/11 保留 Matcha）。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型；兼容构建使用 Flutter 3.19.6 / Dart 3.3；兼容构建使用 Flutter 3.19.6 / Dart 3.3。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库、D3D 编译组件、Matcha Icefall zh-Baker 声学模型、Vocos 声码器、sherpa-onnx 运行库及 espeak-ng-data。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
+          $notes = "Reader Windows 7 SP1-11 x64 兼容测试版（Win7/8/8.1 使用旧版 Skia/内置 eSpeak 兼容路径，Win10/11 保留 Matcha）。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型；兼容构建使用 Flutter 3.16.9 / Dart 3.2.6。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库、D3D 编译组件、Matcha Icefall zh-Baker 声学模型、Vocos 声码器、sherpa-onnx 运行库及 espeak-ng-data。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"
