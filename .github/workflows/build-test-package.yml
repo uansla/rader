@@ -144,7 +144,7 @@ jobs:
           }
 
           $packageRoot = ([System.Uri]$pkg.rootUri).LocalPath
-          $source = Join-Path $packageRoot "libsrcoffline_speaker_diarization.dart"
+          $source = Join-Path (Join-Path $packageRoot "lib") "src\offline_speaker_diarization.dart"
           if (-not (Test-Path $source)) {
             throw "sherpa_onnx 1.13.4 source file was not found: $source"
           }
