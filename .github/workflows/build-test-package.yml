@@ -64,6 +64,41 @@ jobs:
 
           $vs2019 = $vs2019 | Select-Object -First 1
           Write-Host "Visual Studio 2019: $vs2019"
+
+          # flutter_tts 4.0.2 Windows source uses ATL strings (atlstr.h).
+          # Ensure the v142 ATL component is present even if VS2019 was
+          # already installed on the hosted runner.
+          $atlHeader = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "atlstr.h" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if ($null -eq $atlHeader) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools_2019.exe"
+            if (-not (Test-Path $bootstrapper)) {
+              Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
+            }
+
+            $modifyArguments = @(
+              "--modify",
+              $vs2019,
+              "--quiet",
+              "--wait",
+              "--norestart",
+              "--nocache",
+              "--add",
+              "Microsoft.VisualStudio.Component.VC.14.29.16.11.ATL"
+            )
+
+            $installer = Start-Process -FilePath $bootstrapper -ArgumentList $modifyArguments -Wait -PassThru
+            if ($installer.ExitCode -notin @(0, 3010)) {
+              throw "Visual Studio 2019 ATL component installation failed: exit code $($installer.ExitCode)"
+            }
+
+            $atlHeader = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "atlstr.h" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -eq $atlHeader) {
+              throw "ATL component was requested but atlstr.h is still missing from VS2019."
+            }
+          }
+
+          Write-Host "ATL header: $($atlHeader.FullName)"
           Add-Content -Path $env:GITHUB_ENV -Value "GYP_MSVS_OVERRIDE_PATH=$vs2019"
           Add-Content -Path $env:GITHUB_ENV -Value "VSINSTALLDIR=$vs2019"
           & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property displayName,installationVersion
