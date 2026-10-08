@@ -177,6 +177,8 @@ jobs:
             New-Item -ItemType Junction -Path $linkPath -Target $packageRoot | Out-Null
             Write-Host "Linked $pluginName -> $packageRoot"
           }
+
+      - name: Analyze
         run: flutter analyze --no-pub --no-fatal-infos
 
       - name: Test
@@ -268,6 +270,7 @@ jobs:
             Move-Item $source $matchaRuntimeDir -Force
           }
 
+          $matchaArchive = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker.tar.bz2"
           $matchaRoot = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker"
 
           if (Test-Path $matchaArchive) {
