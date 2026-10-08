@@ -141,8 +141,10 @@ class TtsService {
     try {
       final version = Platform.operatingSystemVersion;
       // Win7=6.1, Win8=6.2, Win8.1=6.3.
-      return RegExp(r'\bWindows\s+6\.[123]\b', caseSensitive: false)
-          .hasMatch(version);
+      return RegExp(
+        r'(Windows\s+7\b|Windows\s+8(?:\.1)?\b|Windows\s+6\.[123]\b)',
+        caseSensitive: false,
+      ).hasMatch(version);
     } catch (_) {
       return false;
     }

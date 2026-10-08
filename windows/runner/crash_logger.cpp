@@ -3,6 +3,11 @@
 #include <windows.h>
 
 #include <cstdlib>
+#include <exception>
+#include <csignal>
+#include <cstdint>
+#include <new>
+#include <corecrt.h>
 #include <cwchar>
 
 #include <strsafe.h>
@@ -222,6 +227,46 @@ void CreateCurrentMarker() {
   }
 }
 
+
+void TerminateAfterLog(const wchar_t* title, const wchar_t* details) {
+  WriteCrashDetails(title, details);
+  TerminateProcess(GetCurrentProcess(), 0xC0000409);
+}
+
+void __cdecl PureCallHandler() {
+  TerminateAfterLog(L"C++ purecall / 纯虚函数异常",
+                    L"检测到纯虚函数调用导致的运行时错误。");
+}
+
+void __cdecl InvalidParameterHandler(const wchar_t* expression,
+                                     const wchar_t* function,
+                                     const wchar_t* file,
+                                     unsigned int line,
+                                     uintptr_t) {
+  wchar_t details[2048] = {};
+  StringCchPrintfW(
+      details, _countof(details),
+      L"表达式: %s\r\n函数: %s\r\n文件: %s\r\n行号: %u",
+      expression ? expression : L"<unknown>",
+      function ? function : L"<unknown>",
+      file ? file : L"<unknown>",
+      line);
+  TerminateAfterLog(L"C/C++ invalid parameter 异常", details);
+}
+
+void __cdecl TerminateHandler() {
+  TerminateAfterLog(L"C++ terminate 异常",
+                    L"程序触发 std::terminate，通常意味着未捕获的 C++ 异常。");
+}
+
+void AbortSignalHandler(int signal) {
+  wchar_t details[256] = {};
+  StringCchPrintfW(
+      details, _countof(details),
+      L"CRT signal: %d", signal);
+  TerminateAfterLog(L"C/C++ abort 异常", details);
+}
+
 LONG WINAPI UnhandledExceptionFilter(EXCEPTION_POINTERS* exception) {
   const DWORD code = exception && exception->ExceptionRecord
       ? exception->ExceptionRecord->ExceptionCode
@@ -248,6 +293,14 @@ void LogError(const wchar_t* message) {
 
 void InstallHandlers() {
   SetUnhandledExceptionFilter(UnhandledExceptionFilter);
+  _set_purecall_handler(PureCallHandler);
+  _set_invalid_parameter_handler(InvalidParameterHandler);
+  std::set_terminate(TerminateHandler);
+  signal(SIGABRT, AbortSignalHandler);
+  signal(SIGFPE, AbortSignalHandler);
+  signal(SIGILL, AbortSignalHandler);
+  signal(SIGSEGV, AbortSignalHandler);
+  signal(SIGTERM, AbortSignalHandler);
   SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX |
                SEM_NOOPENFILEERRORBOX);
 }

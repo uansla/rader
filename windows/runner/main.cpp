@@ -2,9 +2,138 @@
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
+#include <cwchar>
+#include <string>
+#include <vector>
+
 #include "crash_logger.h"
 #include "flutter_window.h"
 #include "utils.h"
+
+
+namespace {
+
+bool HasCommandLineSwitch(const std::vector<std::string>& args,
+                          const char* wanted) {
+  for (const auto& arg : args) {
+    if (arg == wanted) return true;
+  }
+  return false;
+}
+
+bool IsLegacyWindowsVersion() {
+  OSVERSIONINFOEXW version{};
+  version.dwOSVersionInfoSize = sizeof(version);
+  if (GetVersionExW(reinterpret_cast<OSVERSIONINFOW*>(&version))) {
+    return version.dwMajorVersion < 6 ||
+           (version.dwMajorVersion == 6 && version.dwMinorVersion <= 3);
+  }
+  return false;
+}
+
+bool IsBasicDisplayAdapter() {
+  DISPLAY_DEVICEW device{};
+  device.cb = sizeof(device);
+
+  for (DWORD index = 0; EnumDisplayDevicesW(nullptr, index, &device, 0);
+       ++index) {
+    if (device.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER) {
+      continue;
+    }
+
+    const wchar_t* name = device.DeviceString;
+    if (name == nullptr || *name == L'\0') {
+      continue;
+    }
+
+    if (wcsstr(name, L"Microsoft Basic Display Adapter") != nullptr ||
+        wcsstr(name, L"Standard VGA Graphics Adapter") != nullptr ||
+        wcsstr(name, L"标准 VGA 图形适配器") != nullptr ||
+        wcsstr(name, L"Microsoft 基本显示适配器") != nullptr) {
+      return true;
+    }
+  }
+
+  // If Windows reports no usable display adapter, prefer CPU rendering.
+  device = {};
+  device.cb = sizeof(device);
+  return !EnumDisplayDevicesW(nullptr, 0, &device, 0);
+}
+
+bool RelaunchWithSoftwareRenderingIfNeeded(
+    const std::vector<std::string>& args) {
+  if (HasCommandLineSwitch(args, "--enable-software-rendering")) {
+    return true;
+  }
+
+  if (!IsLegacyWindowsVersion() && !IsBasicDisplayAdapter()) {
+    return true;
+  }
+
+  wchar_t executable[MAX_PATH] = {};
+  const DWORD length =
+      GetModuleFileNameW(nullptr, executable, _countof(executable));
+  if (length == 0 || length >= _countof(executable)) {
+    reader_crash::LogError(
+        L"兼容模式启动失败：无法获取 reader.exe 的程序路径。");
+    return false;
+  }
+
+  std::wstring command_line = L"\"";
+  command_line.append(executable);
+  command_line.append(L"\"");
+
+  // Keep all original switches and right-click file paths.
+  const std::wstring original = GetCommandLineW();
+  const wchar_t* p = original.c_str();
+  bool inside_quotes = false;
+  while (*p != L'\0') {
+    if (*p == L'\"') inside_quotes = !inside_quotes;
+    if (!inside_quotes && (*p == L' ' || *p == L'\t')) break;
+    ++p;
+  }
+  while (*p == L' ' || *p == L'\t') ++p;
+  if (*p != L'\0') {
+    command_line.append(L" ");
+    command_line.append(p);
+  }
+  command_line.append(L" --enable-software-rendering");
+
+  std::vector<wchar_t> mutable_command(command_line.begin(),
+                                        command_line.end());
+  mutable_command.push_back(L'\0');
+
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+
+  const BOOL started = CreateProcessW(
+      executable,
+      mutable_command.data(),
+      nullptr,
+      nullptr,
+      FALSE,
+      CREATE_NO_WINDOW,
+      nullptr,
+      nullptr,
+      &startup,
+      &process);
+
+  if (!started) {
+    wchar_t details[512] = {};
+    swprintf_s(details, _countof(details),
+               L"无法启动软件渲染兼容进程。Windows 错误代码: %lu",
+               static_cast<unsigned long>(GetLastError()));
+    reader_crash::LogError(details);
+    return false;
+  }
+
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  return false;  // caller exits; child continues.
+}
+
+}  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -29,6 +158,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
 
+  if (HasCommandLineSwitch(command_line_arguments,
+                         "--native-crash-log-self-test")) {
+    RaiseException(0xE0425244, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+    TerminateProcess(GetCurrentProcess(), 0xE0425244);
+    return EXIT_FAILURE;
+  }
+
   bool utility_mode = false;
   for (const auto& arg : command_line_arguments) {
     if (arg == "--tts-self-test" ||
@@ -41,6 +177,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   if (!utility_mode) {
+    // 老 Windows / 基本显示适配器自动切到 Skia 软件渲染。
+    // 子进程会保留原始右键文件路径和其他启动参数。
+    if (!RelaunchWithSoftwareRenderingIfNeeded(command_line_arguments)) {
+      return EXIT_SUCCESS;
+    }
+
     // 正常应用进程建立运行标记；CI/右键注册自检不会留下异常退出标记。
     reader_crash::MarkStartup();
   }
