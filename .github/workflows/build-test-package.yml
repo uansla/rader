@@ -201,11 +201,21 @@ jobs:
         shell: pwsh
         run: |
           $content = Get-Content "windows/flutter/generated_plugins.cmake" -Raw
-          if ($content -match "(?s)list\(APPEND FLUTTER_PLUGIN_LIST.*?sherpa_onnx_windows") {
+          $normalStart = $content.IndexOf("list(APPEND FLUTTER_PLUGIN_LIST")
+          $ffiStart = $content.IndexOf("list(APPEND FLUTTER_FFI_PLUGIN_LIST")
+          if ($normalStart -lt 0 -or $ffiStart -lt 0 -or $ffiStart -le $normalStart) {
+            throw "Could not locate the expected Flutter plugin lists."
+          }
+          $normalSection = $content.Substring($normalStart, $ffiStart - $normalStart)
+          $ffiSection = $content.Substring($ffiStart)
+          if ($normalSection -match "sherpa_onnx_windows") {
             throw "sherpa_onnx_windows is incorrectly registered as a normal Flutter plugin."
           }
-          if ($content -notmatch "(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST.*?sherpa_onnx_windows") {
+          if ($ffiSection -notmatch "sherpa_onnx_windows") {
             throw "sherpa_onnx_windows is missing from FLUTTER_FFI_PLUGIN_LIST."
+          }
+          if ($ffiSection -match "(?m)^\s*jni\s*$") {
+            throw "Android-only jni plugin remains in the Windows FFI plugin list."
           }
       - name: Analyze
         run: flutter analyze --no-pub --no-fatal-infos
