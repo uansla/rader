@@ -82,7 +82,8 @@ jobs:
             }
 
             $modifyArguments = @(
-              "--modify",
+              "modify",
+              "--installPath",
               ('"' + $vs2019 + '"'),
               "--quiet",
               "--wait",
