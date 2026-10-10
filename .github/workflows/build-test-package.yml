@@ -327,11 +327,11 @@ jobs:
             throw "ReaderSpEnumTokens helper declaration was not injected correctly."
           }
           if ($content.Contains("ReaderReaderSpEnumTokens(") -or
-    $content.Contains("#include <atlstr.h>") -or
-    $content.Contains("#include <sphelper.h>") -or
-    $content.Contains("CComPtr<ISpDataKey>") -or
-    $content.Contains("CW2A(") -or
-    $content -match '(?<!Reader)SpEnumTokens\(') {
+              $content.Contains("#include <atlstr.h>") -or
+              $content.Contains("#include <sphelper.h>") -or
+              $content.Contains("CComPtr<ISpDataKey>") -or
+              $content.Contains("CW2A(") -or
+              $content -match '(?<!Reader)SpEnumTokens\(') {
             throw "ATL / sphelper symbols remain in flutter_tts after compatibility patch."
           }
 
