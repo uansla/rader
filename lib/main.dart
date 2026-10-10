@@ -35,7 +35,6 @@ void main(List<String> args) {
             p.join(matchaDir, 'date.fst'),
             p.join(matchaDir, 'number.fst'),
           ].join(','),
-          runtimeDirectory: base,
           numThreads: 2,
         );
         if (!ok) exit(2);
