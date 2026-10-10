@@ -14,377 +14,32 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: windows-2025
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Visual Studio 2019 Build Tools
-        shell: pwsh
-        run: |
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe was not found on the GitHub runner."
-          }
-
-          $findVs2019 = {
-            $found = @(& $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null)
-            if ($found.Count -gt 0) {
-              return [string]$found[0]
-            }
-            return ""
-          }
-
-          $vs2019 = (& $findVs2019).Trim()
-          $installPath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2019\BuildTools"
-          $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools_2019.exe"
-
-          if (-not $vs2019) {
-            Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
-
-            # Start-Process joins argument arrays into one command line; explicitly
-            # quote the path so Windows Installer does not truncate at "Program Files".
-            $arguments = @(
-              "--quiet",
-              "--wait",
-              "--norestart",
-              "--nocache",
-              "--installPath",
-              ('"' + $installPath + '"'),
-              "--add",
-              "Microsoft.VisualStudio.Workload.VCTools",
-              "--add",
-              "Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64",
-              "--add",
-              "Microsoft.VisualStudio.Component.Windows10SDK.19041",
-              "--includeRecommended"
-            )
-            $installer = Start-Process -FilePath $bootstrapper -ArgumentList ($arguments -join " ") -Wait -PassThru
-            if ($installer.ExitCode -notin @(0, 3010)) {
-              throw "Visual Studio 2019 Build Tools installation failed: exit code $($installer.ExitCode)"
-            }
-
-            $vs2019 = (& $findVs2019).Trim()
-          }
-
-          if (-not $vs2019 -or -not (Test-Path $vs2019)) {
-            throw "Visual Studio 2019 with VC tools was not found after setup."
-          }
-
-          Write-Host ("Visual Studio 2019 installation path: <{0}>" -f $vs2019)
-
-          # flutter_tts SAPI is patched below to use Windows SDK WRL, so ATL headers are not required.
-          $compiler = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "cl.exe" -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "\\bin\\Hostx64\\x64\\cl\.exe$" } |
-            Select-Object -First 1
-          if ($null -eq $compiler) {
-            throw "Visual Studio 2019 x64 C++ compiler was not found."
-          }
-          Write-Host "v142 x64 compiler: $($compiler.FullName)"
-
-          Add-Content -Path $env:GITHUB_ENV -Value "GYP_MSVS_OVERRIDE_PATH=$vs2019"
-          Add-Content -Path $env:GITHUB_ENV -Value "VSINSTALLDIR=$vs2019"
-          & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property displayName,installationVersion
-
-      - name: Cache Flutter 3.16.9 SDK
-        uses: actions/cache@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          path: ${{ runner.temp }}/flutter-3.16.9
-          key: flutter-windows-3.16.9-x64
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
 
-      - name: Setup Flutter 3.16.9
-        shell: pwsh
-        run: |
-          $flutterRoot = Join-Path $env:RUNNER_TEMP "flutter-3.16.9"
-          if (-not (Test-Path (Join-Path $flutterRoot "bin\flutter.bat"))) {
-            git clone --depth 1 --branch 3.16.9 https://github.com/flutter/flutter.git $flutterRoot
-          }
+      - name: Flutter dependencies
+        run: flutter pub get
 
-          if (-not (Test-Path (Join-Path $flutterRoot "bin\flutter.bat"))) {
-            throw "Flutter 3.16.9 SDK was not prepared: $flutterRoot"
-          }
-
-          $flutterBin = Join-Path $flutterRoot "bin"
-          Add-Content -Path $env:GITHUB_PATH -Value $flutterBin
-
-          & (Join-Path $flutterBin "flutter.bat") --version
-          & (Join-Path $flutterBin "flutter.bat") precache --windows
-
-      - name: Verify legacy-compatible source
-        shell: pwsh
-        run: |
-          $flutterVersion = flutter --version
-          if (($flutterVersion -join ' ') -notmatch "3\.16\.9") {
-            throw "Unexpected Flutter version. Expected Flutter 3.16.9."
-          }
-
-          $manifest = Get-Content "windows/runner/runner.exe.manifest" -Raw
-          foreach ($id in @(
-            "{35138b9a-5d96-4fbd-8e2d-a2440225f93a}",
-            "{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}",
-            "{1f676c76-80e1-4239-95bb-83d0f6d0da78}",
-            "{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"
-          )) {
-            if ($manifest -notmatch [regex]::Escape($id)) {
-              throw "Windows compatibility GUID is missing: $id"
-            }
-          }
-
-          if ((Get-Content "windows/runner/main.cpp" -Raw) -match "set_impeller_switch|ImpellerSwitch") {
-            throw "Legacy Windows build must not use the newer Impeller API."
-          }
-
-          $withValuesMatches = @(git grep -n "withValues(" -- lib 2>$null)
-          $grepExit = $LASTEXITCODE
-          if ($grepExit -eq 0) {
-            $withValuesMatches | ForEach-Object { Write-Host $_ }
-            throw "Flutter 3.16.9 incompatible withValues API remains in lib."
-          }
-          if ($grepExit -eq 1) {
-            # git grep uses exit code 1 for a valid "no matches" result.
-            exit 0
-          }
-          throw "Unable to scan source for withValues API. git grep exit code: $grepExit"
-
-      - name: Dart dependency resolution
-        shell: pwsh
-        run: |
-          flutter --version
-          dart --version
-          dart pub get
-
-      - name: Patch sherpa-onnx 1.13.4 for Dart 3.2.6
-        shell: pwsh
-        run: |
-          $configPath = ".dart_tool/package_config.json"
-          $config = Get-Content $configPath -Raw | ConvertFrom-Json
-          $pkg = $config.packages | Where-Object { $_.name -eq "sherpa_onnx" } | Select-Object -First 1
-          if ($null -eq $pkg) {
-            throw "sherpa_onnx package was not found in package_config.json."
-          }
-
-          $packageRoot = ([System.Uri]$pkg.rootUri).LocalPath
-          $source = Join-Path (Join-Path $packageRoot "lib") "src\offline_speaker_diarization.dart"
-          if (-not (Test-Path $source)) {
-            throw "sherpa_onnx 1.13.4 source file was not found: $source"
-          }
-
-          $content = Get-Content $source -Raw
-          if ($content -notmatch [regex]::Escape("final s = segments + i;")) {
-            throw "Expected sherpa Dart 3.2 compatibility issue was not found; refusing to patch an unknown source."
-          }
-
-          $content = $content.Replace(
-            "final s = segments + i;",
-            "final s = segments.elementAt(i);"
-          )
-          Set-Content -Path $source -Value $content -Encoding UTF8
-          Write-Host "Patched sherpa_onnx 1.13.4 Pointer arithmetic for Dart 3.2.6."
-
-      - name: Prepare Windows plugin links
-        shell: pwsh
-        run: |
-          $configPath = ".dart_tool/package_config.json"
-          $linkRoot = "windows/flutter/ephemeral/.plugin_symlinks"
-
-          if (-not (Test-Path $configPath)) {
-            throw "Dart package configuration was not generated: $configPath"
-          }
-
-          $config = Get-Content $configPath -Raw | ConvertFrom-Json
-          New-Item -ItemType Directory -Path $linkRoot -Force | Out-Null
-
-          # Windows plugins currently declared by the app's generated CMake file.
-          $pluginNames = @(
-            "charset_converter",
-            "desktop_drop",
-            "flutter_tts",
-            "just_audio_windows",
-            "permission_handler_windows",
-            "sherpa_onnx_windows"
-          )
-
-          foreach ($pluginName in $pluginNames) {
-            $package = $config.packages | Where-Object { $_.name -eq $pluginName } | Select-Object -First 1
-            if ($null -eq $package) {
-              throw "Package $pluginName is not present in package_config.json"
-            }
-
-            $packageRoot = ([Uri]$package.rootUri).LocalPath
-            $windowsRoot = Join-Path $packageRoot 'windows'
-            if (-not (Test-Path $windowsRoot)) {
-              throw "Windows implementation for $pluginName is missing: $windowsRoot"
-            }
-
-            $linkPath = Join-Path $linkRoot $pluginName
-            if (Test-Path $linkPath) {
-              Remove-Item $linkPath -Recurse -Force
-            }
-            New-Item -ItemType Junction -Path $linkPath -Target $packageRoot | Out-Null
-            Write-Host "Linked $pluginName -> $packageRoot"
-          }
-
-          $pluginCmake = "windows/flutter/generated_plugins.cmake"
-          if (Test-Path $pluginCmake) {
-            $generated = Get-Content $pluginCmake -Raw
-            $generated = $generated -replace "(?ms)list\(APPEND FLUTTER_PLUGIN_LIST.*?\)", "list(APPEND FLUTTER_PLUGIN_LIST`n  charset_converter`n  desktop_drop`n  flutter_tts`n  just_audio_windows`n  permission_handler_windows`n)"
-            $generated = $generated -replace "(?ms)list\(APPEND FLUTTER_FFI_PLUGIN_LIST.*?\)", "list(APPEND FLUTTER_FFI_PLUGIN_LIST`n  sherpa_onnx_windows`n)"
-            Set-Content -Path $pluginCmake -Value $generated -Encoding UTF8
-            Write-Host "Configured sherpa_onnx_windows as FFI plugin."
-          }
-          Write-Host 'Windows Flutter plugin links prepared for Flutter 3.16.9.'
-
-      - name: Patch flutter_tts SAPI code for Windows 7 without ATL headers
-        shell: pwsh
-        run: |
-          $config = Get-Content ".dart_tool/package_config.json" -Raw | ConvertFrom-Json
-          $pkg = $config.packages | Where-Object { $_.name -eq "flutter_tts" } | Select-Object -First 1
-          if ($null -eq $pkg) {
-            throw "flutter_tts package was not found in package_config.json."
-          }
-
-          $packageRoot = ([Uri]$pkg.rootUri).LocalPath
-          $source = Join-Path (Join-Path $packageRoot "windows") "flutter_tts_plugin.cpp"
-          if (-not (Test-Path $source)) {
-            throw "flutter_tts Windows source file was not found: $source"
-          }
-
-          $content = Get-Content $source -Raw
-          foreach ($needle in @("#include <atlstr.h>", "#include <sphelper.h>", "CComPtr<ISpDataKey>", "CW2A(psz)", "CW2A(locale)", "SpEnumTokens(")) {
-            if ($content -notmatch [regex]::Escape($needle)) {
-              throw "Expected flutter_tts legacy source pattern was not found: $needle"
-            }
-          }
-
-          $content = $content.Replace("#include <atlstr.h>", "#include <wrl/client.h>")
-          $content = $content.Replace("#include <sphelper.h>", "")
-          if ($content -notmatch [regex]::Escape("#include <cstdlib>")) {
-            $content = $content.Replace(
-              "#include <string>",
-              "#include <string>" + [Environment]::NewLine + "#include <cstdlib>"
-            )
-          }
-          $content = $content.Replace("CComPtr<ISpDataKey>", "Microsoft::WRL::ComPtr<ISpDataKey>")
-          $content = $content.Replace("std::strtol(CW2A(psz), NULL, 16)", "std::wcstoul(psz, nullptr, 16)")
-
-          if ($content -notmatch "static HRESULT ReaderSpEnumTokens") {
-            $helper = @'
-          static HRESULT ReaderSpEnumTokens(
-              const wchar_t* categoryId,
-              const wchar_t* requiredAttributes,
-              const wchar_t* optionalAttributes,
-              IEnumSpObjectTokens** tokens) {
-            if (tokens == nullptr) return E_POINTER;
-            *tokens = nullptr;
-
-            ISpObjectTokenCategory* category = nullptr;
-            HRESULT hr = CoCreateInstance(
-                CLSID_SpObjectTokenCategory,
-                nullptr,
-                CLSCTX_INPROC_SERVER,
-                IID_ISpObjectTokenCategory,
-                reinterpret_cast<void**>(&category));
-            if (FAILED(hr)) return hr;
-
-            hr = category->SetId(categoryId, FALSE);
-            if (SUCCEEDED(hr)) {
-              hr = category->EnumTokens(
-                  requiredAttributes, optionalAttributes, tokens);
-            }
-            category->Release();
-            return hr;
-          }
-
-          static std::string ReaderWideToUtf8(const wchar_t* value) {
-            if (value == nullptr || *value == L'\0') return std::string();
-            const int required = WideCharToMultiByte(
-                CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
-            if (required <= 1) return std::string();
-            std::string result(static_cast<size_t>(required), '\0');
-            const int written = WideCharToMultiByte(
-                CP_UTF8, 0, value, -1, &result[0], required, nullptr, nullptr);
-            if (written <= 1) return std::string();
-            result.resize(static_cast<size_t>(written - 1));
-            return result;
-          }
-
-          '@
-            $includeAnchor = "#include <sapi.h>"
-            if (-not $content.Contains($includeAnchor)) {
-              throw "Could not locate SAPI include for compatibility helpers."
-            }
-            $content = $content.Replace(
-              $includeAnchor,
-              $includeAnchor + [Environment]::NewLine + $helper
-            )
-          }
-
-          $content = [regex]::Replace($content, '(?<!Reader)SpEnumTokens\(', 'ReaderSpEnumTokens(')
-          $content = $content.Replace("CW2A(psz)", "ReaderWideToUtf8(psz)")
-          $content = $content.Replace("CW2A(locale)", "ReaderWideToUtf8(locale)")
-          if (-not $content.Contains("static HRESULT ReaderSpEnumTokens(")) {
-            throw "ReaderSpEnumTokens helper declaration was not injected correctly."
-          }
-          if ($content.Contains("ReaderReaderSpEnumTokens(") -or
-              $content.Contains("#include <atlstr.h>") -or
-              $content.Contains("#include <sphelper.h>") -or
-              $content.Contains("CComPtr<ISpDataKey>") -or
-              $content.Contains("CW2A(") -or
-              $content -match '(?<!Reader)SpEnumTokens\(') {
-            throw "ATL / sphelper symbols remain in flutter_tts after compatibility patch."
-          }
-
-          Set-Content -Path $source -Value $content -Encoding UTF8
-          Write-Host "Patched flutter_tts SAPI code to use native SAPI COM + WRL, without ATL."
-
-      - name: Remove Android-only jni from Windows plugin list
-        shell: pwsh
-        run: |
-          $pluginCmake = "windows/flutter/generated_plugins.cmake"
-          $content = Get-Content $pluginCmake -Raw
-          $content = [regex]::Replace($content, "(?m)^\s*jni\s*\r?\n", "")
-          if ($content -notmatch "(?s)list\(APPEND FLUTTER_FFI_PLUGIN_LIST.*?sherpa_onnx_windows") {
-            throw "sherpa_onnx_windows is missing from the Windows FFI plugin list."
-          }
-          Set-Content -Path $pluginCmake -Value $content -Encoding UTF8
-          Write-Host "Removed Android-only jni while keeping sherpa_onnx_windows."
-      - name: Verify sherpa Windows FFI plugin list
-        shell: pwsh
-        run: |
-          $content = Get-Content "windows/flutter/generated_plugins.cmake" -Raw
-          $normalStart = $content.IndexOf("list(APPEND FLUTTER_PLUGIN_LIST")
-          $ffiStart = $content.IndexOf("list(APPEND FLUTTER_FFI_PLUGIN_LIST")
-          if ($normalStart -lt 0 -or $ffiStart -lt 0 -or $ffiStart -le $normalStart) {
-            throw "Could not locate the expected Flutter plugin lists."
-          }
-          $normalSection = $content.Substring($normalStart, $ffiStart - $normalStart)
-          $ffiSection = $content.Substring($ffiStart)
-          if ($normalSection -match "sherpa_onnx_windows") {
-            throw "sherpa_onnx_windows is incorrectly registered as a normal Flutter plugin."
-          }
-          if ($ffiSection -notmatch "sherpa_onnx_windows") {
-            throw "sherpa_onnx_windows is missing from FLUTTER_FFI_PLUGIN_LIST."
-          }
-          if ($ffiSection -match "(?m)^\s*jni\s*$") {
-            throw "Android-only jni plugin remains in the Windows FFI plugin list."
-          }
       - name: Analyze
-        run: flutter analyze --no-pub --no-fatal-infos
+        run: flutter analyze
 
       - name: Test
-        run: flutter test --no-pub
-
-      - name: Clean stale Windows CMake cache
-        shell: pwsh
-        run: |
-          Remove-Item "build/windows/x64" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "build/native_assets" -Recurse -Force -ErrorAction SilentlyContinue
+        run: flutter test
 
       - name: Build Windows x64
-        run: flutter build windows --release --no-pub
+        run: flutter build windows --release
 
-      - name: Add offline Matcha TTS runtime and models - legacy compatible
+      - name: Add offline Matcha TTS runtime and models
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
@@ -409,53 +64,6 @@ jobs:
             Remove-Item $dataDst -Recurse -Force
           }
           Copy-Item $dataSrc $dataDst -Recurse -Force
-
-          # Bundle the VS2019 v142 CRT for old Windows systems.
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null | Select-Object -First 1
-          if (-not $vs2019) {
-            throw "Visual Studio 2019 installation path was not found."
-          }
-
-          $crtRoot = Get-ChildItem (Join-Path $vs2019 "VC\Redist\MSVC") -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $crtRoot) {
-            throw "VC++ v142 redist directory was not found."
-          }
-
-          $crtDir = Join-Path $crtRoot.FullName "x64\Microsoft.VC142.CRT"
-          if (-not (Test-Path $crtDir)) {
-            throw "VC++ v142 x64 CRT directory was not found: $crtDir"
-          }
-          Copy-Item (Join-Path $crtDir "*.dll") $releaseDir -Force
-
-          # Bundle Universal CRT files from the Windows SDK when available.
-          $kitRedist = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist"
-          $ucrtBase = Get-ChildItem $kitRedist -Recurse -Filter "ucrtbase.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "\\ucrt\\DLLs\\x64\\" } | Sort-Object FullName -Descending | Select-Object -First 1
-          if ($ucrtBase) {
-            Copy-Item (Join-Path $ucrtBase.Directory.FullName "*.dll") $releaseDir -Force
-            Write-Host "Bundled UCRT from $($ucrtBase.Directory.FullName)"
-          } else {
-            Write-Warning "Windows SDK UCRT app-local files were not found."
-          }
-
-          # Bundle d3dcompiler_47 for legacy Skia/ANGLE systems.
-          $d3dCompiler = Get-ChildItem $kitRedist -Recurse -Filter "d3dcompiler_47.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($d3dCompiler) {
-            Copy-Item $d3dCompiler.FullName $releaseDir -Force
-            Write-Host "Bundled d3dcompiler_47.dll"
-          } else {
-            Write-Warning "d3dcompiler_47.dll was not found in the Windows SDK."
-          }
-
-          # Keep sherpa/ONNX DLLs in the Release root so Windows
-          # can resolve their bundled VC/UCRT dependencies normally.
-          foreach ($file in @("sherpa-onnx-c-api.dll", "onnxruntime.dll")) {
-            $source = Join-Path $releaseDir $file
-            if (-not (Test-Path $source)) {
-              throw "Generated sherpa runtime file is missing: $source"
-            }
-          }
-
 
           $matchaArchive = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker.tar.bz2"
           $matchaRoot = Join-Path $env:RUNNER_TEMP "matcha-icefall-zh-baker"
@@ -518,9 +126,14 @@ jobs:
           Write-Host "Vocos model size: $vocosSize bytes"
 
           $testNote = @(
-            "Reader Windows x64 测试版",
+            "Reader Windows x64 闪退日志测试版",
             "",
-            "本版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音；Windows 7/8/8.1 自动使用内置 eSpeak 兼容路径，Windows 10/11 使用 Matcha。",
+            "本版本重点增加软件闪退/异常日志记录。",
+            "日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log",
+            "日志只记录未处理异常、Windows 原生闪退和明确错误，不记录正常阅读/导入/扫描等信息。",
+            "Windows 7-11 全版本兼容和无驱动运行改造会在后续独立版本处理。",
+            "",
+            "本版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音。",
             "Matcha 声学模型 + Vocos 声码器约 123 MB。",
             "",
             "运行：双击 reader.exe",
@@ -532,7 +145,7 @@ jobs:
             "4. Reader 会直接打开文件，不需要先进入 Reader 书架。",
             "5. 如果移动了 Reader 整个文件夹，再运行一次 Reader 或安装脚本即可更新路径。",
             "",
-            "Matcha 模型文件位于 matcha-icefall-zh-baker 目录，Vocos 位于 Release 根目录；sherpa-onnx 原生运行库位于 matcha-runtime 目录。",
+            "Matcha 模型文件位于 matcha-icefall-zh-baker 目录，Vocos 位于 Release 根目录。",
             "",
             "If Windows SmartScreen appears, choose More info and run. This is an unsigned test build."
           ) -join [Environment]::NewLine
@@ -553,15 +166,11 @@ jobs:
 
           $required = @(
             "reader.exe",
-            "vcruntime140.dll",
-            "vcruntime140_1.dll",
-            "msvcp140.dll",
+            "sherpa-onnx-c-api.dll",
+            "onnxruntime.dll",
             "espeak-ng.dll",
             "vocos-22khz-univ.onnx",
-            "d3dcompiler_47.dll",
-            "espeak-ng-data",
-            "sherpa-onnx-c-api.dll",
-            "onnxruntime.dll"
+            "espeak-ng-data"
           )
 
           foreach ($item in $required) {
@@ -570,19 +179,22 @@ jobs:
             }
           }
 
-          if (-not (Test-Path (Join-Path $releaseDir "ucrtbase.dll"))) {
-            throw "Bundled ucrtbase.dll is missing."
-          }
-
           $matchaDir = Join-Path $releaseDir "matcha-icefall-zh-baker"
-          foreach ($item in @("model-steps-3.onnx","lexicon.txt","tokens.txt","phone.fst","date.fst","number.fst")) {
+          foreach ($item in @(
+            "model-steps-3.onnx",
+            "lexicon.txt",
+            "tokens.txt",
+            "phone.fst",
+            "date.fst",
+            "number.fst"
+          )) {
             if (-not (Test-Path (Join-Path $matchaDir $item))) {
               throw "Required Matcha release item is missing: $item"
             }
           }
 
           Write-Host "Windows executable: $($exe.FullName)"
-          Write-Host "Legacy runtime bundle and Matcha files verified."
+          Write-Host "Windows Matcha release files verified."
 
       - name: Verify Matcha TTS synthesis
         shell: pwsh
@@ -662,46 +274,6 @@ jobs:
           '@
           Set-Content -Path (Join-Path $releaseDir "Uninstall-Reader-Right-Click.cmd") -Value $uninstallScript -Encoding UTF8
 
-      - name: Verify Dart crash log recording
-        shell: pwsh
-        run: |
-          $releaseDir = "build/windows/x64/runner/Release"
-          $exe = Join-Path $releaseDir "reader.exe"
-          $logPath = Join-Path $env:LOCALAPPDATA "Reader\Reader-Crash.log"
-          if (Test-Path $logPath) { Remove-Item $logPath -Force }
-          $selfTest = Start-Process -FilePath $exe -ArgumentList "--dart-error-log-self-test" -Wait -PassThru -WindowStyle Hidden
-          if ($selfTest.ExitCode -ne 0) { throw "Dart crash log self-test failed with exit code $($selfTest.ExitCode)" }
-          if (-not (Test-Path $logPath)) { throw "Dart crash log file was not created: $logPath" }
-          $content = Get-Content -Path $logPath -Raw
-          if ($content -notmatch "来源: SelfTest") { throw "Dart crash log does not contain the self-test error record." }
-          Remove-Item $logPath -Force
-      - name: Verify native crash log recording
-        shell: pwsh
-        run: |
-          $releaseDir = "build/windows/x64/runner/Release"
-          $exe = Join-Path $releaseDir "reader.exe"
-          $logPath = Join-Path $env:LOCALAPPDATA "Reader\Reader-Crash.log"
-
-          if (Test-Path $logPath) {
-            Remove-Item $logPath -Force
-          }
-
-          $proc = Start-Process -FilePath $exe -ArgumentList "--native-crash-log-self-test" -Wait -PassThru -WindowStyle Hidden
-          if ($proc.ExitCode -eq 0) {
-            throw "Native crash self-test unexpectedly returned exit code 0."
-          }
-
-          if (-not (Test-Path $logPath)) {
-            throw "Native crash log file was not created: $logPath"
-          }
-
-          $content = Get-Content -Path $logPath -Raw
-          if ($content -notmatch "Windows 未处理异常 / 闪退") {
-            throw "Native crash log does not contain the expected crash record."
-          }
-
-          Remove-Item $logPath -Force
-
       - name: Verify crash log recording
         shell: pwsh
         run: |
@@ -729,11 +301,38 @@ jobs:
 
           Remove-Item $logPath -Force
 
+      - name: Verify native crash log recording
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $exe = Join-Path $releaseDir "reader.exe"
+          $logPath = Join-Path $env:LOCALAPPDATA "Reader\Reader-Crash.log"
+
+          if (Test-Path $logPath) {
+            Remove-Item $logPath -Force
+          }
+
+          $proc = Start-Process -FilePath $exe -ArgumentList "--native-crash-log-self-test" -Wait -PassThru -WindowStyle Hidden
+          if ($proc.ExitCode -eq 0) {
+            throw "Native crash self-test unexpectedly returned exit code 0."
+          }
+
+          if (-not (Test-Path $logPath)) {
+            throw "Native crash log file was not created: $logPath"
+          }
+
+          $content = Get-Content -Path $logPath -Raw
+          if ($content -notmatch "Windows 未处理异常 / 闪退") {
+            throw "Native crash log does not contain the expected crash record."
+          }
+
+          Remove-Item $logPath -Force
+
       - name: Package Windows x64
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.4.5_Windows_x64.zip"
+          $zip = "Reader_v1.3.6_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -752,10 +351,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.4.5_Windows_x64.zip"
-          $tag = "v1.4.5-windows-${{ github.run_number }}"
-          $title = "Reader v1.4.5 Windows x64 兼容测试版 #${{ github.run_number }}"
-          $notes = "Reader Windows 7 SP1-11 x64 兼容测试版（Win7/8/8.1 默认关闭系统 TTS 与 Matcha，使用内置 eSpeak 兼容路径；Win10/11 使用 Matcha）。兼容性仍需以对应硬件实机测试为准；无可用音频设备时可以阅读，但无法保证扬声器有声音。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型；兼容构建使用 Flutter 3.16.9 / Dart 3.2.6。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库、D3D 编译组件、Matcha Icefall zh-Baker 声学模型、Vocos 声码器、sherpa-onnx 运行库及 espeak-ng-data。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。仅记录闪退、未处理异常和明确错误，不记录正常运行信息。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
+          $zip = "Reader_v1.3.6_Windows_x64.zip"
+          $tag = "v1.3.6-windows-${{ github.run_number }}"
+          $title = "Reader v1.3.6 Windows x64 闪退日志测试版 #${{ github.run_number }}"
+          $notes = "Reader Windows x64 闪退日志测试版。此版本重点改进 Dart/Flutter 未处理异常、Windows 原生闪退和异常退出检测；日志位于 %LOCALAPPDATA%\Reader\Reader-Crash.log，仅记录错误，不记录正常使用情况。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、离线中文 TTS 运行库、Matcha Icefall zh-Baker 声学模型、Vocos 声码器及 espeak-ng-data。此版本不包含后续 Windows 7-11 全版本兼容及无驱动运行改造，这两项会在后续独立版本处理。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"

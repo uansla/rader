@@ -22,7 +22,6 @@ class MatchaTts {
     required String lexiconPath,
     required String tokensPath,
     required String ruleFsts,
-    required String runtimeDirectory,
     int numThreads = 2,
   }) async {
     if (_ready) return true;
@@ -46,7 +45,6 @@ class MatchaTts {
       'lexicon': lexiconPath,
       'tokens': tokensPath,
       'ruleFsts': ruleFsts,
-      'runtimeDirectory': runtimeDirectory,
       'numThreads': numThreads,
     });
     _ready = ok ?? false;
@@ -123,7 +121,6 @@ class MatchaTts {
             message['lexicon'] as String,
             message['tokens'] as String,
             message['ruleFsts'] as String,
-            message['runtimeDirectory'] as String,
             message['numThreads'] as int? ?? 2,
           );
           break;
@@ -149,11 +146,10 @@ class _MatchaWorker {
     String lexicon,
     String tokens,
     String ruleFsts,
-    String runtimeDirectory,
     int numThreads,
   ) {
     try {
-      sherpa.initBindings(runtimeDirectory);
+      sherpa.initBindings();
 
       final matcha = sherpa.OfflineTtsMatchaModelConfig(
         acousticModel: acousticModel,

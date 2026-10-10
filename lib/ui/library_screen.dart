@@ -168,7 +168,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                   color: Theme.of(context)
                       .colorScheme
                       .primary
-                      .withOpacity(0.08),
+                      .withValues(alpha: 0.08),
                   alignment: Alignment.center,
                   child: Container(
                     padding: const EdgeInsets.all(24),
@@ -316,7 +316,7 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 6),
         Text(text, style: Theme.of(context).textTheme.titleSmall),
         const Spacer(),
-        trailing ?? const SizedBox.shrink(),
+        ?trailing,
       ],
     );
   }

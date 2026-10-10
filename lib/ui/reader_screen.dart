@@ -520,7 +520,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               // 页内亮度遮罩
               IgnorePointer(
                 child: Container(
-                  color: Colors.black.withOpacity(_brightness),
+                  color: Colors.black.withValues(alpha: _brightness),
                 ),
               ),
             ],
@@ -1053,7 +1053,7 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: palette.toolbar.withOpacity(0.96),
+      color: palette.toolbar.withValues(alpha: 0.96),
       padding:
           EdgeInsets.only(top: MediaQuery.of(context).padding.top + 4, bottom: 4),
       child: Row(
@@ -1139,7 +1139,7 @@ class _BottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = palette.toolbarText;
     return Container(
-      color: palette.toolbar.withOpacity(0.96),
+      color: palette.toolbar.withValues(alpha: 0.96),
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 4),
       child: Column(
@@ -1328,7 +1328,7 @@ class _ChapterBodyState extends State<_ChapterBody> {
         spans.add(TextSpan(
           text: widget.text.substring(highlightStart, s),
           style: widget.style.copyWith(
-            backgroundColor: widget.palette.accent.withOpacity(0.22),
+            backgroundColor: widget.palette.accent.withValues(alpha: 0.22),
           ),
         ));
       }

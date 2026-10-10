@@ -816,7 +816,7 @@ class _BookCell extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: scheme.surface.withOpacity(0.9),
+                        color: scheme.surface.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Row(
@@ -845,7 +845,7 @@ class _BookCell extends StatelessWidget {
                         vertical: 1,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.45),
+                        color: Colors.black.withValues(alpha: 0.45),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(

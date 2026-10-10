@@ -59,7 +59,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           : ListView.separated(
               padding: const EdgeInsets.all(8),
               itemCount: _rows.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, i) {
                 final r = _rows[i];
                 final ts = (r['ts'] as int?) ?? 0;

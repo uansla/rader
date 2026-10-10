@@ -69,7 +69,7 @@ ThemeData buildAppTheme(Brightness brightness) {
       foregroundColor: scheme.onSurface,
       elevation: 0,
     ),
-    cardTheme: const CardTheme(
+    cardTheme: const CardThemeData(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
     ),
