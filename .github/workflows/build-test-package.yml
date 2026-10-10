@@ -57,8 +57,6 @@ jobs:
               "--add",
               "Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64",
               "--add",
-              "Microsoft.VisualStudio.Component.VC.14.29.16.11.ATL",
-              "--add",
               "Microsoft.VisualStudio.Component.Windows10SDK.19041",
               "--includeRecommended"
             )
@@ -76,38 +74,15 @@ jobs:
 
           Write-Host ("Visual Studio 2019 installation path: <{0}>" -f $vs2019)
 
-          # flutter_tts 4.0.2 Windows source needs atlstr.h from the VS2019 ATL component.
-          $atlHeader = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "atlstr.h" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -eq $atlHeader) {
-            if (-not (Test-Path $bootstrapper)) {
-              Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
-            }
-
-            $modifyArguments = @(
-              "modify",
-              "--installPath",
-              ('"' + $vs2019 + '"'),
-              "--quiet",
-              "--wait",
-              "--norestart",
-              "--nocache",
-              "--add",
-              "Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64",
-              "--add",
-              "Microsoft.VisualStudio.Component.VC.14.29.16.11.ATL"
-            )
-            $installer = Start-Process -FilePath $bootstrapper -ArgumentList ($modifyArguments -join " ") -Wait -PassThru
-            if ($installer.ExitCode -notin @(0, 3010)) {
-              throw "Visual Studio 2019 ATL component installation failed: exit code $($installer.ExitCode)"
-            }
-
-            $atlHeader = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "atlstr.h" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($null -eq $atlHeader) {
-              throw "ATL component was requested but atlstr.h is still missing from VS2019."
-            }
+          # flutter_tts SAPI is patched below to use Windows SDK WRL, so ATL headers are not required.
+          $compiler = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "cl.exe" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "\\bin\\Hostx64\\x64\\cl\.exe$" } |
+            Select-Object -First 1
+          if ($null -eq $compiler) {
+            throw "Visual Studio 2019 x64 C++ compiler was not found."
           }
+          Write-Host "v142 x64 compiler: $($compiler.FullName)"
 
-          Write-Host "ATL header: $($atlHeader.FullName)"
           Add-Content -Path $env:GITHUB_ENV -Value "GYP_MSVS_OVERRIDE_PATH=$vs2019"
           Add-Content -Path $env:GITHUB_ENV -Value "VSINSTALLDIR=$vs2019"
           & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property displayName,installationVersion
@@ -260,6 +235,72 @@ jobs:
           }
           Write-Host 'Windows Flutter plugin links prepared for Flutter 3.16.9.'
 
+      - name: Patch flutter_tts SAPI code for Windows 7 without ATL headers
+        shell: pwsh
+        run: |
+          $config = Get-Content ".dart_tool/package_config.json" -Raw | ConvertFrom-Json
+          $pkg = $config.packages | Where-Object { $_.name -eq "flutter_tts" } | Select-Object -First 1
+          if ($null -eq $pkg) {
+            throw "flutter_tts package was not found in package_config.json."
+          }
+
+          $packageRoot = ([Uri]$pkg.rootUri).LocalPath
+          $source = Join-Path (Join-Path $packageRoot "windows") "flutter_tts_plugin.cpp"
+          if (-not (Test-Path $source)) {
+            throw "flutter_tts Windows source file was not found: $source"
+          }
+
+          $content = Get-Content $source -Raw
+          foreach ($needle in @("#include <atlstr.h>", "CComPtr<ISpDataKey>", "CW2A(psz)", "CW2A(locale)")) {
+            if ($content -notmatch [regex]::Escape($needle)) {
+              throw "Expected flutter_tts ATL source pattern was not found: $needle"
+            }
+          }
+
+          $content = $content.Replace("#include <atlstr.h>", "#include <wrl/client.h>")
+          if ($content -notmatch [regex]::Escape("#include <cstdlib>")) {
+            $content = $content.Replace(
+              "#include <string>",
+              "#include <string>" + [Environment]::NewLine + "#include <cstdlib>"
+            )
+          }
+          $content = $content.Replace("CComPtr<ISpDataKey>", "Microsoft::WRL::ComPtr<ISpDataKey>")
+          $content = $content.Replace("std::strtol(CW2A(psz), NULL, 16)", "std::wcstoul(psz, nullptr, 16)")
+
+          if ($content -notmatch "static std::string ReaderWideToUtf8") {
+            $helper = @'
+          static std::string ReaderWideToUtf8(const wchar_t* value) {
+            if (value == nullptr || *value == L'\0') return std::string();
+            const int required = WideCharToMultiByte(
+                CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
+            if (required <= 1) return std::string();
+            std::string result(static_cast<size_t>(required), '\0');
+            const int written = WideCharToMultiByte(
+                CP_UTF8, 0, value, -1, &result[0], required, nullptr, nullptr);
+            if (written <= 1) return std::string();
+            result.resize(static_cast<size_t>(written - 1));
+            return result;
+          }
+
+          '@
+            $includeAnchor = "#include <sphelper.h>"
+            if (-not $content.Contains($includeAnchor)) {
+              throw "Could not locate SAPI helper include for UTF-8 converter."
+            }
+            $content = $content.Replace(
+              $includeAnchor,
+              $includeAnchor + [Environment]::NewLine + $helper
+            )
+          }
+
+          $content = $content.Replace("CW2A(psz)", "ReaderWideToUtf8(psz)")
+          $content = $content.Replace("CW2A(locale)", "ReaderWideToUtf8(locale)")
+          if ($content -match "#include <atlstr\.h>|CComPtr<ISpDataKey>|CW2A\(") {
+            throw "ATL string/COM helpers remain in flutter_tts after compatibility patch."
+          }
+
+          Set-Content -Path $source -Value $content -Encoding UTF8
+          Write-Host "Patched flutter_tts SAPI code to use WRL and Win32 UTF-8 conversion."
       - name: Remove Android-only jni from Windows plugin list
         shell: pwsh
         run: |
