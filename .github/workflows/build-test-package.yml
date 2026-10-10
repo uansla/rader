@@ -251,13 +251,14 @@ jobs:
           }
 
           $content = Get-Content $source -Raw
-          foreach ($needle in @("#include <atlstr.h>", "CComPtr<ISpDataKey>", "CW2A(psz)", "CW2A(locale)")) {
+          foreach ($needle in @("#include <atlstr.h>", "#include <sphelper.h>", "CComPtr<ISpDataKey>", "CW2A(psz)", "CW2A(locale)", "SpEnumTokens(")) {
             if ($content -notmatch [regex]::Escape($needle)) {
-              throw "Expected flutter_tts ATL source pattern was not found: $needle"
+              throw "Expected flutter_tts legacy source pattern was not found: $needle"
             }
           }
 
           $content = $content.Replace("#include <atlstr.h>", "#include <wrl/client.h>")
+          $content = $content.Replace("#include <sphelper.h>", "")
           if ($content -notmatch [regex]::Escape("#include <cstdlib>")) {
             $content = $content.Replace(
               "#include <string>",
@@ -267,8 +268,34 @@ jobs:
           $content = $content.Replace("CComPtr<ISpDataKey>", "Microsoft::WRL::ComPtr<ISpDataKey>")
           $content = $content.Replace("std::strtol(CW2A(psz), NULL, 16)", "std::wcstoul(psz, nullptr, 16)")
 
-          if ($content -notmatch "static std::string ReaderWideToUtf8") {
+          if ($content -notmatch "static HRESULT ReaderSpEnumTokens") {
             $helper = @'
+          static HRESULT ReaderSpEnumTokens(
+              const wchar_t* categoryId,
+              const wchar_t* requiredAttributes,
+              const wchar_t* optionalAttributes,
+              IEnumSpObjectTokens** tokens) {
+            if (tokens == nullptr) return E_POINTER;
+            *tokens = nullptr;
+
+            ISpObjectTokenCategory* category = nullptr;
+            HRESULT hr = CoCreateInstance(
+                CLSID_SpObjectTokenCategory,
+                nullptr,
+                CLSCTX_INPROC_SERVER,
+                IID_ISpObjectTokenCategory,
+                reinterpret_cast<void**>(&category));
+            if (FAILED(hr)) return hr;
+
+            hr = category->SetId(categoryId, FALSE);
+            if (SUCCEEDED(hr)) {
+              hr = category->EnumTokens(
+                  requiredAttributes, optionalAttributes, tokens);
+            }
+            category->Release();
+            return hr;
+          }
+
           static std::string ReaderWideToUtf8(const wchar_t* value) {
             if (value == nullptr || *value == L'\0') return std::string();
             const int required = WideCharToMultiByte(
@@ -283,9 +310,9 @@ jobs:
           }
 
           '@
-            $includeAnchor = "#include <sphelper.h>"
+            $includeAnchor = "#include <sapi.h>"
             if (-not $content.Contains($includeAnchor)) {
-              throw "Could not locate SAPI helper include for UTF-8 converter."
+              throw "Could not locate SAPI include for compatibility helpers."
             }
             $content = $content.Replace(
               $includeAnchor,
@@ -293,14 +320,16 @@ jobs:
             )
           }
 
+          $content = $content.Replace("SpEnumTokens(", "ReaderSpEnumTokens(")
           $content = $content.Replace("CW2A(psz)", "ReaderWideToUtf8(psz)")
           $content = $content.Replace("CW2A(locale)", "ReaderWideToUtf8(locale)")
-          if ($content -match "#include <atlstr\.h>|CComPtr<ISpDataKey>|CW2A\(") {
-            throw "ATL string/COM helpers remain in flutter_tts after compatibility patch."
+          if ($content -match "#include <atlstr\.h>|#include <sphelper\.h>|CComPtr<ISpDataKey>|CW2A\(|(?<!Reader)SpEnumTokens\(") {
+            throw "ATL / sphelper symbols remain in flutter_tts after compatibility patch."
           }
 
           Set-Content -Path $source -Value $content -Encoding UTF8
-          Write-Host "Patched flutter_tts SAPI code to use WRL and Win32 UTF-8 conversion."
+          Write-Host "Patched flutter_tts SAPI code to use native SAPI COM + WRL, without ATL."
+
       - name: Remove Android-only jni from Windows plugin list
         shell: pwsh
         run: |
