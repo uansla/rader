@@ -21,13 +21,28 @@ bool HasCommandLineSwitch(const std::vector<std::string>& args,
 }
 
 bool IsLegacyWindowsVersion() {
-  OSVERSIONINFOEXW version{};
-  version.dwOSVersionInfoSize = sizeof(version);
-  if (GetVersionExW(reinterpret_cast<OSVERSIONINFOW*>(&version))) {
-    return version.dwMajorVersion < 6 ||
-           (version.dwMajorVersion == 6 && version.dwMinorVersion <= 3);
+  // GetVersionExW is deprecated and /WX turns its warning into a build failure.
+  // RtlGetVersion reports the real kernel version on Windows 7 through 11.
+  using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  if (ntdll == nullptr) {
+    return false;
   }
-  return false;
+
+  const auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
+      GetProcAddress(ntdll, "RtlGetVersion"));
+  if (rtl_get_version == nullptr) {
+    return false;
+  }
+
+  OSVERSIONINFOW version{};
+  version.dwOSVersionInfoSize = sizeof(version);
+  if (rtl_get_version(&version) != 0) {
+    return false;
+  }
+
+  return version.dwMajorVersion < 6 ||
+         (version.dwMajorVersion == 6 && version.dwMinorVersion <= 3);
 }
 
 bool IsBasicDisplayAdapter() {
