@@ -23,24 +23,35 @@ jobs:
       - name: Install Visual Studio 2019 Build Tools
         shell: pwsh
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
           if (-not (Test-Path $vswhere)) {
             throw "vswhere.exe was not found on the GitHub runner."
           }
 
-          $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null
+          $findVs2019 = {
+            $found = @(& $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null)
+            if ($found.Count -gt 0) {
+              return [string]$found[0]
+            }
+            return ""
+          }
+
+          $vs2019 = (& $findVs2019).Trim()
+          $installPath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2019\BuildTools"
+          $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools_2019.exe"
 
           if (-not $vs2019) {
-            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools_2019.exe"
             Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
 
+            # Start-Process joins argument arrays into one command line; explicitly
+            # quote the path so Windows Installer does not truncate at "Program Files".
             $arguments = @(
               "--quiet",
               "--wait",
               "--norestart",
               "--nocache",
               "--installPath",
-              "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools",
+              ('"' + $installPath + '"'),
               "--add",
               "Microsoft.VisualStudio.Workload.VCTools",
               "--add",
@@ -49,36 +60,30 @@ jobs:
               "Microsoft.VisualStudio.Component.Windows10SDK.19041",
               "--includeRecommended"
             )
-
-            $installer = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru
+            $installer = Start-Process -FilePath $bootstrapper -ArgumentList ($arguments -join " ") -Wait -PassThru
             if ($installer.ExitCode -notin @(0, 3010)) {
               throw "Visual Studio 2019 Build Tools installation failed: exit code $($installer.ExitCode)"
             }
 
-            $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null
+            $vs2019 = (& $findVs2019).Trim()
           }
 
-          if (-not $vs2019) {
-            throw "Visual Studio 2019 with VC tools is still unavailable."
+          if (-not $vs2019 -or -not (Test-Path $vs2019)) {
+            throw "Visual Studio 2019 with VC tools was not found after setup."
           }
 
-          $vs2019 = $vs2019 | Select-Object -First 1
-          Write-Host "Visual Studio 2019: $vs2019"
+          Write-Host ("Visual Studio 2019 installation path: <{0}>" -f $vs2019)
 
-          # flutter_tts 4.0.2 Windows source uses ATL strings (atlstr.h).
-          # Ensure the v142 ATL component is present even if VS2019 was
-          # already installed on the hosted runner.
+          # flutter_tts 4.0.2 Windows source needs atlstr.h from the VS2019 ATL component.
           $atlHeader = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "atlstr.h" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
-
           if ($null -eq $atlHeader) {
-            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools_2019.exe"
             if (-not (Test-Path $bootstrapper)) {
               Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
             }
 
             $modifyArguments = @(
               "--modify",
-              $vs2019,
+              ('"' + $vs2019 + '"'),
               "--quiet",
               "--wait",
               "--norestart",
@@ -86,8 +91,7 @@ jobs:
               "--add",
               "Microsoft.VisualStudio.Component.VC.14.29.16.11.ATL"
             )
-
-            $installer = Start-Process -FilePath $bootstrapper -ArgumentList $modifyArguments -Wait -PassThru
+            $installer = Start-Process -FilePath $bootstrapper -ArgumentList ($modifyArguments -join " ") -Wait -PassThru
             if ($installer.ExitCode -notin @(0, 3010)) {
               throw "Visual Studio 2019 ATL component installation failed: exit code $($installer.ExitCode)"
             }
@@ -646,7 +650,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
-          $zip = "Reader_v1.4.4_Windows_x64.zip"
+          $zip = "Reader_v1.4.5_Windows_x64.zip"
 
           if (Test-Path $zip) {
             Remove-Item $zip -Force
@@ -665,10 +669,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = "Reader_v1.4.3_Windows_x64.zip"
-          $tag = "v1.4.4-windows-${{ github.run_number }}"
-          $title = "Reader v1.4.4 Windows x64 兼容测试版 #${{ github.run_number }}"
-          $notes = "Reader Windows 7 SP1-11 x64 兼容测试版（Win7/8/8.1 默认关闭系统 TTS 与 Matcha，使用内置 eSpeak 兼容路径；Win10/11 使用 Matcha）。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型；兼容构建使用 Flutter 3.16.9 / Dart 3.2.6。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库、D3D 编译组件、Matcha Icefall zh-Baker 声学模型、Vocos 声码器、sherpa-onnx 运行库及 espeak-ng-data。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。仅记录闪退、未处理异常和明确错误，不记录正常运行信息。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
+          $zip = "Reader_v1.4.5_Windows_x64.zip"
+          $tag = "v1.4.5-windows-${{ github.run_number }}"
+          $title = "Reader v1.4.5 Windows x64 兼容测试版 #${{ github.run_number }}"
+          $notes = "Reader Windows 7 SP1-11 x64 兼容测试版（Win7/8/8.1 默认关闭系统 TTS 与 Matcha，使用内置 eSpeak 兼容路径；Win10/11 使用 Matcha）。兼容性仍需以对应硬件实机测试为准；无可用音频设备时可以阅读，但无法保证扬声器有声音。此版本使用 sherpa-onnx Matcha Icefall zh-Baker 中文离线语音模型；兼容构建使用 Flutter 3.16.9 / Dart 3.2.6。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库、D3D 编译组件、Matcha Icefall zh-Baker 声学模型、Vocos 声码器、sherpa-onnx 运行库及 espeak-ng-data。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。仅记录闪退、未处理异常和明确错误，不记录正常运行信息。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"

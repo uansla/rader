@@ -32,7 +32,7 @@
 | Android | `Reader_vX.Y.Z.apk` | 直接安装（arm64，约 141MB，含离线语音模型） |
 | Windows | `Reader_Windows.zip` | Windows 7 / 8 / 8.1 / 10 / 11 x64 兼容测试版，解压即用 |
 
-> Windows 首次朗读会自动加载内置 Matcha Icefall zh-Baker 中文离线语音，无需额外配置。
+> Windows 10/11 首次朗读会自动加载内置 Matcha Icefall zh-Baker 中文离线语音；Windows 7/8/8.1 会使用内置 eSpeak 兼容路径。无可用音频设备时可以阅读文件，但无法保证播放出声音。
 > Android 需要 Android 10+（API 29+）。
 
 📚 完整文档见 [`docs/`](docs/README.md)（同步 GitHub Wiki）。
