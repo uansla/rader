@@ -320,10 +320,13 @@ jobs:
             )
           }
 
-          $content = $content.Replace("SpEnumTokens(", "ReaderSpEnumTokens(")
+          $content = [regex]::Replace($content, '(?<!Reader)SpEnumTokens\(', 'ReaderSpEnumTokens(')
           $content = $content.Replace("CW2A(psz)", "ReaderWideToUtf8(psz)")
           $content = $content.Replace("CW2A(locale)", "ReaderWideToUtf8(locale)")
-          if ($content -match "#include <atlstr\.h>|#include <sphelper\.h>|CComPtr<ISpDataKey>|CW2A\(|(?<!Reader)SpEnumTokens\(") {
+          if ($content -notmatch "static HRESULT ReaderSpEnumTokens\\(") {
+            throw "ReaderSpEnumTokens helper declaration was not injected correctly."
+          }
+          if ($content -match "ReaderReaderSpEnumTokens\\(|#include <atlstr\\.h>|#include <sphelper\\.h>|CComPtr<ISpDataKey>|CW2A\\(|(?<!Reader)SpEnumTokens\\(") {
             throw "ATL / sphelper symbols remain in flutter_tts after compatibility patch."
           }
 
