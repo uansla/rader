@@ -21,7 +21,8 @@ bool HasCommandLineSwitch(const std::vector<std::string>& args,
 }
 
 bool IsUtilityMode(const std::vector<std::string>& args) {
-  return HasCommandLineSwitch(args, "--native-crash-log-self-test") ||
+  return HasCommandLineSwitch(args, "--native-crash-log-rotation-self-test") ||
+         HasCommandLineSwitch(args, "--native-crash-log-self-test") ||
          HasCommandLineSwitch(args, "--crash-log-self-test") ||
          HasCommandLineSwitch(args, "--tts-self-test") ||
          HasCommandLineSwitch(args, "--install-context-menu") ||
@@ -36,6 +37,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
+
+  // CI self-test for normal append, log rotation, and fail-safe behavior.
+  if (HasCommandLineSwitch(command_line_arguments,
+                           "--native-crash-log-rotation-self-test")) {
+    return reader_crash::RunLogRotationSelfTest() ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
 
   // CI self-test: deliberately trigger an unhandled Windows exception to
   // verify that the native crash logger writes the diagnostic before exit.
