@@ -439,6 +439,10 @@ bool RunLogRotationSelfTestInternal() {
 
 }  // namespace
 
+bool RunLogRotationSelfTest() {
+  return RunLogRotationSelfTestInternal();
+}
+
 void LogError(const wchar_t* message) {
   WriteCrashDetails(L"明确错误", message);
 }
