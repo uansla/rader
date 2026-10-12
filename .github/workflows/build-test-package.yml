@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep PR validation isolated from the main-branch release build.
-  group: windows-release-build-${{ github.ref }}
+  # Serialize Windows builds so newer runs cancel stale jobs on this workflow.
+  group: windows-release-build
   cancel-in-progress: true
 
 permissions:
