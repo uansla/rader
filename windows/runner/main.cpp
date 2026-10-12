@@ -71,8 +71,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
-  // Keep the known working Skia renderer for this release.
-  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+  // Flutter 3.16.9 uses the legacy Skia renderer and remains compatible
+  // with the older Windows API surface targeted by this build.
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
