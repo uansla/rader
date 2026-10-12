@@ -10,6 +10,9 @@ void InstallHandlers();
 // 记录明确的原生错误。
 void LogError(const wchar_t* message);
 
+// CI self-test: normal append, >5 MiB rotation, and safe failure handling.
+bool RunLogRotationSelfTest();
+
 // 用运行标记识别没有机会回调的异常退出。
 void MarkStartup();
 void MarkCleanExit();
