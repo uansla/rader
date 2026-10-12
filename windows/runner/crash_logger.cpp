@@ -9,6 +9,9 @@
 #include <new>
 #include <corecrt.h>
 #include <cwchar>
+#include <cstring>
+#include <string>
+#include <vector>
 
 #include <strsafe.h>
 
@@ -297,6 +300,141 @@ LONG WINAPI UnhandledExceptionFilter(EXCEPTION_POINTERS* exception) {
   WriteCrashDetails(L"Windows 未处理异常 / 闪退", details);
 
   return EXCEPTION_EXECUTE_HANDLER;
+}
+
+
+
+bool GetLogFileSize(LONGLONG* size_out) {
+  if (size_out == nullptr) return false;
+  wchar_t path[MAX_PATH] = {};
+  if (!GetLogPath(path, _countof(path))) return false;
+  HANDLE file = CreateFileW(
+      path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+  LARGE_INTEGER size = {};
+  const BOOL ok = GetFileSizeEx(file, &size);
+  CloseHandle(file);
+  if (!ok || size.QuadPart < 0) return false;
+  *size_out = size.QuadPart;
+  return true;
+}
+
+bool ReadLogContains(const char* marker) {
+  if (marker == nullptr) return false;
+  wchar_t path[MAX_PATH] = {};
+  if (!GetLogPath(path, _countof(path))) return false;
+  HANDLE file = CreateFileW(
+      path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+
+  LARGE_INTEGER size = {};
+  if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 ||
+      size.QuadPart > 64 * 1024) {
+    CloseHandle(file);
+    return false;
+  }
+
+  std::vector<char> contents(static_cast<size_t>(size.QuadPart));
+  DWORD bytes_read = 0;
+  const BOOL read_ok = contents.empty()
+      ? TRUE
+      : ReadFile(file, contents.data(),
+                 static_cast<DWORD>(contents.size()), &bytes_read, nullptr);
+  CloseHandle(file);
+  if (!read_ok) return false;
+
+  const std::string text(contents.begin(), contents.begin() + bytes_read);
+  return text.find(marker) != std::string::npos;
+}
+
+bool WriteOversizedLogFixture(const wchar_t* path) {
+  HANDLE file = CreateFileW(
+      path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+
+  char filler[8192];
+  memset(filler, 'X', sizeof(filler));
+  LONGLONG remaining = static_cast<LONGLONG>(kMaxLogBytes) + 4096;
+  bool ok = true;
+  while (remaining > 0) {
+    const DWORD chunk = static_cast<DWORD>(
+        remaining > static_cast<LONGLONG>(sizeof(filler))
+            ? sizeof(filler)
+            : remaining);
+    DWORD written = 0;
+    if (!WriteFile(file, filler, chunk, &written, nullptr) ||
+        written != chunk) {
+      ok = false;
+      break;
+    }
+    remaining -= written;
+  }
+  CloseHandle(file);
+  return ok;
+}
+
+bool RunLogRotationSelfTestInternal() {
+  wchar_t path[MAX_PATH] = {};
+  if (!GetLogPath(path, _countof(path))) return false;
+  if (!DeleteFileW(path) && GetLastError() != ERROR_FILE_NOT_FOUND) {
+    return false;
+  }
+
+  // Normal append: both records must remain and the second write must grow it.
+  WriteCrashDetails(L"Crash log rotation self-test", L"append-marker-1");
+  LONGLONG first_size = 0;
+  if (!GetLogFileSize(&first_size) || first_size <= 0) return false;
+
+  WriteCrashDetails(L"Crash log rotation self-test", L"append-marker-2");
+  LONGLONG second_size = 0;
+  if (!GetLogFileSize(&second_size) || second_size <= first_size ||
+      !ReadLogContains("append-marker-1") ||
+      !ReadLogContains("append-marker-2")) {
+    return false;
+  }
+
+  // Oversize the file to beyond 5 MiB, then ensure the next log entry rotates it.
+  if (!WriteOversizedLogFixture(path)) return false;
+  LONGLONG oversized_size = 0;
+  if (!GetLogFileSize(&oversized_size) ||
+      oversized_size <= static_cast<LONGLONG>(kMaxLogBytes)) {
+    return false;
+  }
+
+  WriteCrashDetails(
+      L"Crash log rotation self-test", L"after-oversize-marker");
+  LONGLONG rotated_size = 0;
+  if (!GetLogFileSize(&rotated_size) || rotated_size <= 0 ||
+      rotated_size > 64 * 1024 ||
+      !ReadLogContains("after-oversize-marker") ||
+      ReadLogContains("append-marker-1") ||
+      ReadLogContains("XXXXXXXXXX")) {
+    return false;
+  }
+
+  // Fail-safe path: if LOCALAPPDATA is unavailable, logging should no-op
+  // without crashing or damaging the existing log, then restore the environment.
+  wchar_t original_local_app_data[MAX_PATH] = {};
+  const DWORD env_length = GetEnvironmentVariableW(
+      L"LOCALAPPDATA", original_local_app_data,
+      static_cast<DWORD>(_countof(original_local_app_data)));
+  if (env_length == 0 || env_length >= _countof(original_local_app_data)) {
+    return false;
+  }
+  if (!SetEnvironmentVariableW(L"LOCALAPPDATA", L"")) return false;
+  WriteCrashDetails(
+      L"Crash log rotation self-test", L"logging-path-failure-marker");
+  const BOOL restored =
+      SetEnvironmentVariableW(L"LOCALAPPDATA", original_local_app_data);
+  if (!restored) return false;
+
+  LONGLONG after_path_failure_size = 0;
+  return GetLogFileSize(&after_path_failure_size) &&
+         after_path_failure_size == rotated_size &&
+         !ReadLogContains("logging-path-failure-marker");
 }
 
 }  // namespace
