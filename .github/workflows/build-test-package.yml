@@ -57,6 +57,8 @@ jobs:
               "--add",
               "Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64",
               "--add",
+              "Microsoft.VisualStudio.Component.VC.Redist.14.Latest",
+              "--add",
               "Microsoft.VisualStudio.Component.Windows10SDK.19041",
               "--includeRecommended"
             )
@@ -82,6 +84,42 @@ jobs:
             throw "Visual Studio 2019 x64 C++ compiler was not found."
           }
           Write-Host "v142 x64 compiler: $($compiler.FullName)"
+
+          # The compiler toolset may be installed without the app-local v142 CRT.
+          # Install the explicit redist component so the packaged app can run on
+          # older Windows installations without a globally installed VC runtime.
+          $crtSearchRoot = Join-Path $vs2019 "VC\Redist\MSVC"
+          $crtCandidate = Get-ChildItem -Path $crtSearchRoot -Filter "Microsoft.VC142.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName "vcruntime140.dll") } |
+            Select-Object -First 1
+
+          if ($null -eq $crtCandidate) {
+            if (-not (Test-Path $bootstrapper)) {
+              Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
+            }
+            $modifyArguments = @(
+              "--modify",
+              ('"' + $vs2019 + '"'),
+              "--quiet",
+              "--wait",
+              "--norestart",
+              "--nocache",
+              "--add",
+              "Microsoft.VisualStudio.Component.VC.Redist.14.Latest"
+            )
+            $installer = Start-Process -FilePath $bootstrapper -ArgumentList ($modifyArguments -join " ") -Wait -PassThru
+            if ($installer.ExitCode -notin @(0, 3010)) {
+              throw "Visual Studio 2019 v142 CRT redist installation failed: exit code $($installer.ExitCode)"
+            }
+            $crtCandidate = Get-ChildItem -Path $crtSearchRoot -Filter "Microsoft.VC142.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { Test-Path (Join-Path $_.FullName "vcruntime140.dll") } |
+              Select-Object -First 1
+          }
+
+          if ($null -eq $crtCandidate) {
+            throw "The v142 app-local CRT directory is missing after installing Microsoft.VisualStudio.Component.VC.Redist.14.Latest."
+          }
+          Write-Host "v142 app-local CRT: $($crtCandidate.FullName)"
 
           Add-Content -Path $env:GITHUB_ENV -Value "GYP_MSVS_OVERRIDE_PATH=$vs2019"
           Add-Content -Path $env:GITHUB_ENV -Value "VSINSTALLDIR=$vs2019"
@@ -417,16 +455,16 @@ jobs:
             throw "Visual Studio 2019 installation path was not found."
           }
 
-          $crtRoot = Get-ChildItem (Join-Path $vs2019 "VC\Redist\MSVC") -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $crtRoot) {
-            throw "VC++ v142 redist directory was not found."
+          $crtSearchRoot = Join-Path $vs2019 "VC\Redist\MSVC"
+          $crtCandidate = Get-ChildItem -Path $crtSearchRoot -Filter "Microsoft.VC142.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName "vcruntime140.dll") } |
+            Select-Object -First 1
+          if ($null -eq $crtCandidate) {
+            throw "VC++ v142 app-local CRT directory is missing: $crtSearchRoot"
           }
-
-          $crtDir = Join-Path $crtRoot.FullName "x64\Microsoft.VC142.CRT"
-          if (-not (Test-Path $crtDir)) {
-            throw "VC++ v142 x64 CRT directory was not found: $crtDir"
-          }
+          $crtDir = $crtCandidate.FullName
           Copy-Item (Join-Path $crtDir "*.dll") $releaseDir -Force
+          Write-Host "Bundled v142 CRT from $crtDir"
 
           # Bundle Universal CRT files from the Windows SDK when available.
           $kitRedist = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist"
