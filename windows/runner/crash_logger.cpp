@@ -66,10 +66,11 @@ void WriteText(const wchar_t* text) {
     return;
   }
 
-  // Rotation requires FILE_WRITE_DATA, not append-only access. Open for
-  // writing and explicitly seek to EOF below so existing entries are preserved.
+  // GENERIC_WRITE allows truncation; FILE_APPEND_DATA preserves append
+  // semantics if more than one Reader process writes the log concurrently.
   HANDLE file = CreateFileW(
-      path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+      path, GENERIC_WRITE | FILE_APPEND_DATA,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
       OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     return;
