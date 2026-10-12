@@ -63,8 +63,10 @@ void WriteText(const wchar_t* text) {
     return;
   }
 
+  // Rotation requires FILE_WRITE_DATA, not append-only access. Open for
+  // writing and explicitly seek to EOF below so existing entries are preserved.
   HANDLE file = CreateFileW(
-      path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+      path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
       OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     return;
@@ -72,8 +74,20 @@ void WriteText(const wchar_t* text) {
 
   LARGE_INTEGER size = {};
   if (GetFileSizeEx(file, &size) && size.QuadPart > kMaxLogBytes) {
-    SetFilePointer(file, 0, nullptr, FILE_BEGIN);
-    SetEndOfFile(file);
+    LARGE_INTEGER beginning = {};
+    if (!SetFilePointerEx(file, beginning, nullptr, FILE_BEGIN) ||
+        !SetEndOfFile(file)) {
+      CloseHandle(file);
+      return;
+    }
+  }
+
+  // GENERIC_WRITE starts with a file pointer that is not guaranteed to be
+  // at EOF. Seek explicitly before every write to retain append semantics.
+  LARGE_INTEGER end = {};
+  if (!SetFilePointerEx(file, end, nullptr, FILE_END)) {
+    CloseHandle(file);
+    return;
   }
 
   const int utf8_length = WideCharToMultiByte(
