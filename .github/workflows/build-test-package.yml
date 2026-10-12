@@ -2,6 +2,8 @@ name: build-windows
 
 on:
   push:
+    branches: [main, fix-crash-log-rotation]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -301,6 +303,45 @@ jobs:
 
           Remove-Item $logPath -Force
 
+      - name: Verify native crash log rotation and failure handling
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $exe = Join-Path $releaseDir "reader.exe"
+          $logPath = Join-Path $env:LOCALAPPDATA "Reader\Reader-Crash.log"
+
+          if (Test-Path $logPath) {
+            Remove-Item $logPath -Force
+          }
+
+          $test = Start-Process -FilePath $exe -ArgumentList "--native-crash-log-rotation-self-test" -Wait -PassThru -WindowStyle Hidden
+          if ($test.ExitCode -ne 0) {
+            throw "Native crash log rotation self-test failed with exit code $($test.ExitCode)"
+          }
+
+          if (-not (Test-Path $logPath)) {
+            throw "Rotation self-test did not create the crash log: $logPath"
+          }
+
+          $item = Get-Item -LiteralPath $logPath
+          if ($item.Length -le 0 -or $item.Length -gt 65536) {
+            throw "Log size after rotation is outside the expected range: $($item.Length) bytes"
+          }
+
+          $content = Get-Content -LiteralPath $logPath -Raw
+          if ($content -notmatch "after-oversize-marker") {
+            throw "Rotated log is missing the post-rotation entry."
+          }
+          if ($content -match "append-marker-1" -or $content -match "XXXXXXXXXX") {
+            throw "Oversized log content was not truncated."
+          }
+          if ($content -match "logging-path-failure-marker") {
+            throw "A failed log-path write unexpectedly changed the log."
+          }
+
+          Write-Host "Native crash log append, >5 MiB rotation and fail-safe checks passed. Final size: $($item.Length) bytes"
+          Remove-Item $logPath -Force
+
       - name: Verify native crash log recording
         shell: pwsh
         run: |
@@ -347,6 +388,7 @@ jobs:
           Get-Item $zip | Format-List FullName, Length
 
       - name: Publish Windows x64 ZIP to GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
