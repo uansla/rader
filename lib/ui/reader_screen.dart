@@ -1139,7 +1139,7 @@ class _BottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = palette.toolbarText;
     return Container(
-      color: palette.toolbar.withValues(alpha: 0.96),
+      color: palette.toolbar.withOpacity(0.96),
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 4),
       child: Column(
