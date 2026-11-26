@@ -24,6 +24,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select modern dependency manifest
+        shell: pwsh
+        run: |
+          Copy-Item "tool/ci/pubspec-windows-modern.yaml" "pubspec.yaml" -Force
+
       - name: Apply Flutter 3.47 theme API
         shell: pwsh
         run: |
