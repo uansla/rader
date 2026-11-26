@@ -29,10 +29,10 @@ jobs:
         run: |
           $themePath = "lib/core/app_theme.dart"
           $theme = Get-Content -LiteralPath $themePath -Raw
-          if ($theme.Contains("cardTheme: CardTheme(")) {
-            $theme = $theme.Replace("cardTheme: CardTheme(", "cardTheme: CardThemeData(")
+          if ($theme.Contains("CardTheme(")) {
+            $theme = $theme.Replace("CardTheme(", "CardThemeData(")
             Set-Content -LiteralPath $themePath -Value $theme -Encoding utf8
-          } elseif (-not $theme.Contains("cardTheme: CardThemeData(")) {
+          } elseif (-not $theme.Contains("CardThemeData(")) {
             throw "Could not find a known cardTheme declaration for Flutter 3.47."
           }
 
