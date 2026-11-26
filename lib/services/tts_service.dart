@@ -43,7 +43,9 @@ class TtsService {
 
   Future<void> init() async {
     if (_ready) return;
-    _useSystem = await _checkSystemTts();
+    _useSystem = (!Platform.isWindows ||
+            const bool.fromEnvironment('READER_LEGACY_WINDOWS')) &&
+        await _checkSystemTts();
     if (_useSystem) {
       // 系统引擎读完一段文本后触发，用于自动翻页
       _tts.setCompletionHandler(() => onFinished?.call());
