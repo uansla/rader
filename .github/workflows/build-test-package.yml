@@ -16,117 +16,39 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Visual Studio 2019 Build Tools
+      - name: Select Visual Studio 2022 Build Tools
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe was not found on the GitHub runner."
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe was not found." }
+          $vs2022 = & $vswhere -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null | Select-Object -First 1
+          if (-not $vs2022 -or -not (Test-Path $vs2022)) {
+            throw "Visual Studio 2022 C++ Build Tools were not found on windows-2022."
           }
-
-          $findVs2019 = {
-            $found = @(& $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null)
-            if ($found.Count -gt 0) {
-              return [string]$found[0]
-            }
-            return ""
-          }
-
-          $vs2019 = (& $findVs2019).Trim()
-          $installPath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2019\BuildTools"
-          $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools_2019.exe"
-
-          if (-not $vs2019) {
-            Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
-
-            # Start-Process joins argument arrays into one command line; explicitly
-            # quote the path so Windows Installer does not truncate at "Program Files".
-            $arguments = @(
-              "--quiet",
-              "--wait",
-              "--norestart",
-              "--nocache",
-              "--installPath",
-              ('"' + $installPath + '"'),
-              "--add",
-              "Microsoft.VisualStudio.Workload.VCTools",
-              "--add",
-              "Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64",
-              "--add",
-              "Microsoft.VisualStudio.Component.VC.Redist.14.Latest",
-              "--add",
-              "Microsoft.VisualStudio.Component.Windows10SDK.19041",
-              "--includeRecommended"
-            )
-            $installer = Start-Process -FilePath $bootstrapper -ArgumentList ($arguments -join " ") -Wait -PassThru
-            if ($installer.ExitCode -notin @(0, 3010)) {
-              throw "Visual Studio 2019 Build Tools installation failed: exit code $($installer.ExitCode)"
-            }
-
-            $vs2019 = (& $findVs2019).Trim()
-          }
-
-          if (-not $vs2019 -or -not (Test-Path $vs2019)) {
-            throw "Visual Studio 2019 with VC tools was not found after setup."
-          }
-
-          Write-Host ("Visual Studio 2019 installation path: <{0}>" -f $vs2019)
-
-          # flutter_tts SAPI is patched below to use Windows SDK WRL, so ATL headers are not required.
-          $compiler = Get-ChildItem -Path (Join-Path $vs2019 "VC\Tools\MSVC") -Filter "cl.exe" -Recurse -File -ErrorAction SilentlyContinue |
+          $compiler = Get-ChildItem -Path (Join-Path $vs2022 "VC\Tools\MSVC") -Filter "cl.exe" -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match "\\bin\\Hostx64\\x64\\cl\.exe$" } |
             Select-Object -First 1
-          if ($null -eq $compiler) {
-            throw "Visual Studio 2019 x64 C++ compiler was not found."
-          }
-          Write-Host "v142 x64 compiler: $($compiler.FullName)"
-
-          # The compiler toolset may be installed without the app-local v142 CRT.
-          # Install the explicit redist component so the packaged app can run on
-          # older Windows installations without a globally installed VC runtime.
-          $crtSearchRoot = Join-Path $vs2019 "VC\Redist\MSVC"
-          $crtCandidate = Get-ChildItem -Path $crtSearchRoot -Filter "Microsoft.VC142.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
+          if ($null -eq $compiler) { throw "Visual Studio 2022 x64 C++ compiler was not found." }
+          $sdk = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\Include\10.0.19041.0"
+          if (-not (Test-Path $sdk)) { throw "Windows SDK 10.0.19041.0 is not installed on the runner." }
+          $crtRoot = Join-Path $vs2022 "VC\Redist\MSVC"
+          $crt = Get-ChildItem -Path $crtRoot -Filter "Microsoft.VC143.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
             Where-Object { Test-Path (Join-Path $_.FullName "vcruntime140.dll") } |
             Select-Object -First 1
-
-          if ($null -eq $crtCandidate) {
-            if (-not (Test-Path $bootstrapper)) {
-              Invoke-WebRequest -Uri "https://aka.ms/vs/16/release/vs_buildtools.exe" -OutFile $bootstrapper -UseBasicParsing
-            }
-            $modifyArguments = @(
-              "--modify",
-              ('"' + $vs2019 + '"'),
-              "--quiet",
-              "--wait",
-              "--norestart",
-              "--nocache",
-              "--add",
-              "Microsoft.VisualStudio.Component.VC.Redist.14.Latest"
-            )
-            $installer = Start-Process -FilePath $bootstrapper -ArgumentList ($modifyArguments -join " ") -Wait -PassThru
-            if ($installer.ExitCode -notin @(0, 3010)) {
-              throw "Visual Studio 2019 v142 CRT redist installation failed: exit code $($installer.ExitCode)"
-            }
-            $crtCandidate = Get-ChildItem -Path $crtSearchRoot -Filter "Microsoft.VC142.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { Test-Path (Join-Path $_.FullName "vcruntime140.dll") } |
-              Select-Object -First 1
-          }
-
-          if ($null -eq $crtCandidate) {
-            throw "The v142 app-local CRT directory is missing after installing Microsoft.VisualStudio.Component.VC.Redist.14.Latest."
-          }
-          Write-Host "v142 app-local CRT: $($crtCandidate.FullName)"
-
-          Add-Content -Path $env:GITHUB_ENV -Value "GYP_MSVS_OVERRIDE_PATH=$vs2019"
-          Add-Content -Path $env:GITHUB_ENV -Value "VSINSTALLDIR=$vs2019"
-          & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property displayName,installationVersion
+          if ($null -eq $crt) { throw "App-local VC143 CRT was not found on the runner." }
+          Write-Host "Visual Studio 2022: $vs2022"
+          Write-Host "MSVC compiler: $($compiler.FullName)"
+          Write-Host "Windows SDK: $sdk"
+          Write-Host "App-local VC143 CRT: $($crt.FullName)"
+          Add-Content -Path $env:GITHUB_ENV -Value "GYP_MSVS_OVERRIDE_PATH=$vs2022"
+          Add-Content -Path $env:GITHUB_ENV -Value "VSINSTALLDIR=$vs2022"
 
       - name: Cache Flutter 3.16.9 SDK
         uses: actions/cache@v4
@@ -437,33 +359,8 @@ jobs:
           if (-not $cmake.Contains($sdkSetting)) {
             throw "Could not pin the legacy Windows SDK to 10.0.19041.0."
           }
-          $awaitSetting = "add_compile_options(/await)"
-          if (-not $cmake.Contains($awaitSetting)) {
-            $cmake = $cmake.Replace($sdkSetting, $sdkSetting + [Environment]::NewLine + $awaitSetting)
-          }
-          if (-not $cmake.Contains($awaitSetting)) {
-            throw "Could not enable the VS2019 /await compile option."
-          }
           Set-Content -LiteralPath $cmakePath -Value $cmake -Encoding utf8
           Write-Host "Pinned legacy native build to Windows SDK 10.0.19041.0."
-
-      - name: Enable VS2019 coroutine compatibility in just_audio_windows
-        shell: pwsh
-        run: |
-          $config = Get-Content ".dart_tool/package_config.json" -Raw | ConvertFrom-Json
-          $pkg = $config.packages | Where-Object { $_.name -eq "just_audio_windows" } | Select-Object -First 1
-          if ($null -eq $pkg) { throw "just_audio_windows package was not found." }
-          $packageRoot = ([Uri]$pkg.rootUri).LocalPath
-          $cmakePath = Join-Path (Join-Path $packageRoot "windows") "CMakeLists.txt"
-          if (-not (Test-Path $cmakePath)) { throw "just_audio_windows CMake file is missing." }
-          $cmake = Get-Content -LiteralPath $cmakePath -Raw
-          $anchor = 'apply_standard_settings(${PLUGIN_NAME})'
-          if (-not $cmake.Contains('/await')) {
-            if (-not $cmake.Contains($anchor)) { throw "Could not find just_audio_windows compile settings anchor." }
-            $cmake = $cmake.Replace($anchor, $anchor + [Environment]::NewLine + 'target_compile_options(${PLUGIN_NAME} PRIVATE /await)')
-            Set-Content -LiteralPath $cmakePath -Value $cmake -Encoding utf8
-          }
-          Write-Host "Enabled /await for the VS2019 legacy plugin build."
 
       - name: Build Windows 7/8.1 x64 (SAPI-first)
         run: flutter build windows --release --no-pub --dart-define=READER_LEGACY_WINDOWS=true
@@ -494,23 +391,23 @@ jobs:
           }
           Copy-Item $dataSrc $dataDst -Recurse -Force
 
-          # Bundle the VS2019 v142 CRT for old Windows systems.
+          # Bundle the VS2022 v143 CRT for old Windows systems.
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs2019 = & $vswhere -products * -version "[16.0,17.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null | Select-Object -First 1
-          if (-not $vs2019) {
-            throw "Visual Studio 2019 installation path was not found."
+          $vs2022 = & $vswhere -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath 2>$null | Select-Object -First 1
+          if (-not $vs2022) {
+            throw "Visual Studio 2022 installation path was not found."
           }
 
-          $crtSearchRoot = Join-Path $vs2019 "VC\Redist\MSVC"
-          $crtCandidate = Get-ChildItem -Path $crtSearchRoot -Filter "Microsoft.VC142.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
+          $crtSearchRoot = Join-Path $vs2022 "VC\Redist\MSVC"
+          $crtCandidate = Get-ChildItem -Path $crtSearchRoot -Filter "Microsoft.VC143.CRT" -Directory -Recurse -ErrorAction SilentlyContinue |
             Where-Object { Test-Path (Join-Path $_.FullName "vcruntime140.dll") } |
             Select-Object -First 1
           if ($null -eq $crtCandidate) {
-            throw "VC++ v142 app-local CRT directory is missing: $crtSearchRoot"
+            throw "VC++ v143 app-local CRT directory is missing: $crtSearchRoot"
           }
           $crtDir = $crtCandidate.FullName
           Copy-Item (Join-Path $crtDir "*.dll") $releaseDir -Force
-          Write-Host "Bundled v142 CRT from $crtDir"
+          Write-Host "Bundled v143 CRT from $crtDir"
 
           # Bundle Universal CRT files from the Windows SDK when available.
           $kitRedist = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist"
@@ -883,7 +780,7 @@ jobs:
           $zip = "Reader_v${version}_Windows_7-8.1_x64.zip"
           $tag = "v${version}-windows-7-8.1-${{ github.run_number }}"
           $title = "Reader v${version} Windows 7/8.1 x64 旧系统版 #${{ github.run_number }}"
-          $notes = "Reader Windows 7 SP1/8/8.1 x64 旧系统版：优先使用 Windows SAPI 系统语音。Windows 10/11 请下载单独的新系统版。兼容性仍需以对应硬件实机测试为准；无可用音频设备时可以阅读，但无法保证扬声器有声音。旧系统语音由 Windows SAPI 提供；兼容构建使用 Flutter 3.16.9 / Dart 3.2.6。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v142/UCRT 运行库及 D3D 编译组件。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。仅记录闪退、未处理异常和明确错误，不记录正常运行信息。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
+          $notes = "Reader Windows 7 SP1/8/8.1 x64 旧系统版：优先使用 Windows SAPI 系统语音。Windows 10/11 请下载单独的新系统版。兼容性仍需以对应硬件实机测试为准；无可用音频设备时可以阅读，但无法保证扬声器有声音。旧系统语音由 Windows SAPI 提供；兼容构建使用 Flutter 3.16.9 / Dart 3.2.6。Windows 采用 CPU TTS，避免依赖独立显卡。下载后解压 ZIP，运行 reader.exe；首次运行会自动安装 Windows 右键打开菜单。也可以运行 Install-Reader-Right-Click.cmd 手动安装。之后可直接在支持的书籍/文档/音频文件上右键选择用 Reader 打开。本 Release 不包含 Android/APK。ZIP 内包含完整 Windows Release 程序、v143/UCRT 运行库及 D3D 编译组件。错误日志位置：%LOCALAPPDATA%\Reader\Reader-Crash.log。仅记录闪退、未处理异常和明确错误，不记录正常运行信息。Windows 默认关闭 Impeller，并在旧 Windows/基本显示适配器上自动使用软件渲染，优先兼容老显卡/旧驱动。注意：这是未签名的 Windows 测试版本，Windows SmartScreen 可能会提示风险。"
 
           if (-not (Test-Path $zip)) {
             throw "Windows ZIP was not created: $zip"
