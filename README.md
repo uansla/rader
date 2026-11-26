@@ -24,14 +24,15 @@
 
 ## 📦 安装
 
-从 [Releases](https://github.com/oMrCat/reader/releases) 下载最新版：
+从本仓库 [Releases](https://github.com/uansla/rader/releases) 下载对应 Windows 版本：
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
 | Android | `Reader_vX.Y.Z.apk` | 直接安装（arm64，约 141MB，含离线语音模型） |
-| Windows | `Reader_Windows.zip` | 解压即用，双击 `reader.exe` |
+| Windows 7 / 8 / 8.1 | `Reader_vX.Y.Z_Windows_7-8.1_x64.zip` | Flutter 3.16 legacy build，优先使用 Windows SAPI 系统语音 |
+| Windows 10 / 11 | `Reader_vX.Y.Z_Windows_10-11_x64.zip` | 内置 Matcha 中文语音模型，CPU 推理，无需显卡驱动 |
 
-> Windows 首次朗读会自动加载内置离线语音（超文 Chaowen），无需额外配置。
+> Win7/8.1 版使用系统 SAPI 语音；Win10/11 版使用随包提供的 Matcha 离线语音模型。两个版本均以 CPU 运行语音，无需独立显卡驱动。系统声音输出仍需有可用音频设备。
 > Android 需要 Android 10+（API 29+）。
 
 📚 完整文档见 [`docs/`](docs/README.md)（同步 GitHub Wiki）。
@@ -61,18 +62,16 @@
 
 ## 🎙️ 朗读引擎说明
 
-朗读采用三级回退，保证任何设备都能读：
+语音方式按 Windows 版本区分：
 
 ```
-系统引擎（Google TTS / SAPI 等，多音色）
-        ↓ 无中文语音时
-内嵌神经语音「超文 Chaowen」（Piper huayan，离线女声）
-        ↓ 模型/库加载失败时
-espeak-ng（离线机器人腔兜底）
+Windows 7 / 8 / 8.1：Windows SAPI 系统语音（旧系统版）
+Windows 10 / 11：Matcha zh-Baker 离线语音模型（新系统版，CPU 推理）
+Android：系统 TTS 优先，Piper 模型回退
 ```
 
 - 手机（有 Google TTS）：优先使用系统引擎，多音色可选。
-- 平板 / Windows（无可用系统中文引擎）：自动使用**内嵌超文 Chaowen 神经语音**（完全离线，约 63MB 模型随包内置）。
+- Windows 7/8/8.1 构建优先调用 SAPI 系统语音；Windows 10/11 构建直接使用随包内置的 Matcha 离线模型。
 
 ---
 
@@ -84,17 +83,19 @@ espeak-ng（离线机器人腔兜底）
 
 ### 从源码构建
 ```bash
-git clone https://github.com/oMrCat/reader.git
-cd reader
+git clone https://github.com/uansla/rader.git
+cd rader
 
 # Android APK
 flutter pub get
 flutter build apk --release
 # 输出：build/app/outputs/flutter-apk/app-release.apk
 
-# Windows
-flutter build windows --release
-# 输出：build/windows/x64/runner/Release/
+# Windows 10/11（Flutter 3.47.2）
+flutter build windows --release --dart-define=READER_LEGACY_WINDOWS=false
+
+# Windows 7/8/8.1 需使用 Flutter 3.16.9 与旧版依赖集，
+# 请使用 .github/workflows/build-test-package.yml 对应的 legacy CI 构建。
 # 构建后需把 native/espeak-ng 下的 DLL + espeak-ng-data + 语音模型
 # 一并拷贝到 Release 目录（已包含在仓库 native/ 目录）
 ```
