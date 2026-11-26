@@ -440,6 +440,24 @@ jobs:
           Set-Content -LiteralPath $cmakePath -Value $cmake -Encoding utf8
           Write-Host "Pinned legacy native build to Windows SDK 10.0.19041.0."
 
+      - name: Enable VS2019 coroutine compatibility in just_audio_windows
+        shell: pwsh
+        run: |
+          $config = Get-Content ".dart_tool/package_config.json" -Raw | ConvertFrom-Json
+          $pkg = $config.packages | Where-Object { $_.name -eq "just_audio_windows" } | Select-Object -First 1
+          if ($null -eq $pkg) { throw "just_audio_windows package was not found." }
+          $packageRoot = ([Uri]$pkg.rootUri).LocalPath
+          $cmakePath = Join-Path (Join-Path $packageRoot "windows") "CMakeLists.txt"
+          if (-not (Test-Path $cmakePath)) { throw "just_audio_windows CMake file is missing." }
+          $cmake = Get-Content -LiteralPath $cmakePath -Raw
+          $anchor = 'apply_standard_settings(${PLUGIN_NAME})'
+          if (-not $cmake.Contains('/await')) {
+            if (-not $cmake.Contains($anchor)) { throw "Could not find just_audio_windows compile settings anchor." }
+            $cmake = $cmake.Replace($anchor, $anchor + [Environment]::NewLine + 'target_compile_options(${PLUGIN_NAME} PRIVATE /await)')
+            Set-Content -LiteralPath $cmakePath -Value $cmake -Encoding utf8
+          }
+          Write-Host "Enabled /await for the VS2019 legacy plugin build."
+
       - name: Build Windows 7/8.1 x64 (SAPI-first)
         run: flutter build windows --release --no-pub --dart-define=READER_LEGACY_WINDOWS=true
 
