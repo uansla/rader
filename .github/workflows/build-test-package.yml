@@ -359,6 +359,13 @@ jobs:
           if (-not $cmake.Contains($sdkSetting)) {
             throw "Could not pin the legacy Windows SDK to 10.0.19041.0."
           }
+          $awaitSetting = "add_compile_options(/await)"
+          if (-not $cmake.Contains($awaitSetting)) {
+            $cmake = $cmake.Replace($sdkSetting, $sdkSetting + [Environment]::NewLine + $awaitSetting)
+          }
+          if (-not $cmake.Contains($awaitSetting)) {
+            throw "Could not enable VS2022 coroutine compatibility."
+          }
           Set-Content -LiteralPath $cmakePath -Value $cmake -Encoding utf8
           Write-Host "Pinned legacy native build to Windows SDK 10.0.19041.0."
 
