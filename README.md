@@ -29,7 +29,8 @@
 | 平台 | 文件 | 说明 |
 |------|------|------|
 | Android | `Reader_vX.Y.Z.apk` | 直接安装（arm64，约 141MB，含离线语音模型） |
-| Windows 7 / 8 / 8.1 | `Reader_vX.Y.Z_Windows_7-8.1_x64.zip` | Flutter 3.16 legacy build，优先使用 Windows SAPI 系统语音 |\n| Windows 10 / 11 | `Reader_vX.Y.Z_Windows_10-11_x64.zip` | 内置 Matcha 中文语音模型，CPU 推理，无需显卡驱动 |
+| Windows 7 / 8 / 8.1 | `Reader_vX.Y.Z_Windows_7-8.1_x64.zip` | Flutter 3.16 legacy build，优先使用 Windows SAPI 系统语音 |
+| Windows 10 / 11 | `Reader_vX.Y.Z_Windows_10-11_x64.zip` | 内置 Matcha 中文语音模型，CPU 推理，无需显卡驱动 |
 
 > Win7/8.1 版使用系统 SAPI 语音；Win10/11 版使用随包提供的 Matcha 离线语音模型。两个版本均以 CPU 运行语音，无需独立显卡驱动。系统声音输出仍需有可用音频设备。
 > Android 需要 Android 10+（API 29+）。
@@ -64,11 +65,9 @@
 语音方式按 Windows 版本区分：
 
 ```
-系统引擎（Google TTS / SAPI 等，多音色）
-        ↓ 无中文语音时
-内嵌神经语音「超文 Chaowen」（Piper huayan，离线女声）
-        ↓ 模型/库加载失败时
-espeak-ng（离线机器人腔兜底）
+Windows 7 / 8 / 8.1：Windows SAPI 系统语音（旧系统版）
+Windows 10 / 11：Matcha zh-Baker 离线语音模型（新系统版，CPU 推理）
+Android：系统 TTS 优先，Piper 模型回退
 ```
 
 - 手机（有 Google TTS）：优先使用系统引擎，多音色可选。
